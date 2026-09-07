@@ -1,0 +1,14 @@
+Leaf – Windows x64
+
+Start: Leaf.exe doppelklicken.
+Die Anwendung benötigt Microsoft Edge WebView2 Runtime:
+https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+Falls WebView2 fehlt, dort die Evergreen Runtime installieren.
+
+Kein Rust, kein Entwicklungsserver und keine zusätzlichen Buch-/CSS-Dateien nötig.
+Buch, Kapitel und Einstellungen werden unter %LOCALAPPDATA%\leaf\Leaf\data
+in reading.json gespeichert. Lesen funktioniert ohne Netzwerkzugriff.
+
+Unterstützt DRM-freie Text-EPUBs. PDF und eingebettete Bilder fehlen noch.
+Die EXE wurde unter Linux für Windows x64 kompiliert und ist nicht signiert.
+Ein Laufzeittest unter Windows steht noch aus.

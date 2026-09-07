@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Leaf
+Comment=Ein ruhiger EPUB-Reader
+Exec=leaf
+Icon=leaf
+Terminal=false
+Categories=Office;Viewer;
+StartupWMClass=leaf

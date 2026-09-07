@@ -1,0 +1,12 @@
+[application]
+name = "leaf"
+default_platform = "desktop"
+
+[web.app]
+title = "Leaf · Dein E-Book-Reader"
+
+[bundle]
+identifier = "de.leaf.reader"
+publisher = "Leaf"
+short_description = "Ein ruhiger EPUB-Reader"
+category = "Education"
