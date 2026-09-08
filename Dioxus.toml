@@ -10,3 +10,8 @@ identifier = "de.leaf.reader"
 publisher = "Leaf"
 short_description = "Ein ruhiger EPUB-Reader"
 category = "Education"
+
+[android]
+min_sdk = 24
+target_sdk = 34
+compile_sdk = 36

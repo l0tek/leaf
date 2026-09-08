@@ -1,6 +1,6 @@
 # Projektstand — Leaf
 
-Stand: 7. September 2026 · Version 0.1.0
+Stand: 8. September 2026 · Version 0.1.0
 Repository: https://github.com/l0tek/leaf
 
 Diese Datei ist der Einstieg für die nächste Arbeitssitzung. Sie dokumentiert den
@@ -15,10 +15,9 @@ Windows-x64-EXE und einen Windows-Installer mit bedarfsgerechter Installation vo
 WebView2 erweitert. Desktop ist das Standard-Cargo-Feature; Web bleibt optional.
 Die Oberfläche und das Beispielbuch sind deutsch. Bücher werden lokal verarbeitet.
 
-Aktueller Auftrag dieses Checkpoints: README und dauerhaften Projektstand ablegen,
-das bisherige Projekt committen und nach `https://github.com/l0tek/leaf.git` pushen.
-Das Remote hatte bei der Prüfung noch keine Referenzen. Den tatsächlichen Git-Stand
-in Folgesitzungen immer mit `git status`, `git log` und `git remote -v` prüfen.
+Aktueller Auftrag: Projektstatus prüfen, aktuelle Lesestelle automatisch speichern
+und eine Android-APK erstellen. Zu Beginn war der Git-Arbeitsstand sauber.
+Kein Commit oder Push für diese Sitzung beauftragt.
 
 ## Implementiert
 
@@ -26,7 +25,10 @@ in Folgesitzungen immer mit `git status`, `git log` und `git remote -v` prüfen.
 - HTML-Bereinigung mit Ammonia; Skripte, Bilder, Links und Buch-CSS entfernt.
 - Kapitelliste, Vor/Zurück, Schriftgröße 16–28 px, Hell-/Dunkelmodus.
 - Responsive Oberfläche und eingebautes Beispielbuch.
-- Ein zuletzt geöffnetes Buch samt Kapitel und Einstellungen gespeichert.
+- Ein zuletzt geöffnetes Buch samt Kapitel, Scrollposition und Einstellungen gespeichert.
+  Die Scrollposition wird bei Scrollereignissen gespeichert und nach Einbinden der Leseansicht
+  bei fertigem Layout wiederhergestellt; Kapitelwechsel und Buchimport beginnen oben. Alte Zustände
+  ohne Scrollposition bleiben lesbar (Serde-Default 0).
 - Native Speicherung als JSON über temporäre Datei und anschließendes Ersetzen;
   im Browser über Local Storage. Speicherfehler werden angezeigt.
 - Desktop-Fenster 1120 × 800, Mindestgröße 420 × 520.
@@ -51,6 +53,7 @@ in Folgesitzungen immer mit `git status`, `git log` und `git remote -v` prüfen.
 | `Cargo.toml`, `Cargo.lock` | Abhängigkeiten und Desktop-/Web-Features |
 | `Dioxus.toml` | Plattform- und Bundle-Metadaten |
 | `packaging/install.sh`, `packaging/leaf.desktop` | Linux-Benutzerinstallation |
+| `packaging/build-android.sh` | Android-ARM64-Test-APK und Prüfsumme |
 | `packaging/build-windows.sh` | Windows-EXE, ZIP und Prüfsumme |
 | `packaging/leaf-installer.nsi` | Windows-Installations-/Deinstallationslogik |
 | `packaging/build-installer.sh` | Download, Signaturprüfung, NSIS-Build und Prüfsumme |
@@ -123,12 +126,53 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
    aus Kapitelüberschriften, nicht aus EPUB-NAV/NCX.
 3. Textorientierter MVP: keine Bilder, PDF, DRM, eingebetteten Buchstile,
    internen Links, Suche, Lesezeichen oder Mehrbuch-Bibliothek.
-4. Gespeichert wird das Kapitel, nicht die genaue Scrollposition. Web-Speicher
-   ist begrenzt. Parser-Limits: 30 MiB Eingabedatei, 8 MiB pro Textelement,
+4. Die Scrollposition wird in Pixeln gespeichert; Größen-/Schriftänderungen können
+   den sichtbaren Text verschieben. Bei jedem Speichern wird derzeit das gesamte
+   Buch serialisiert; bei großen Büchern ist die Scrollleistung noch zu prüfen.
+   Web-Speicher ist begrenzt. Parser-Limits: 30 MiB Eingabedatei, 8 MiB pro Textelement,
    40 MiB gesamte Kapitelquellen. Die Dateiauswahl liest zunächst die Datei,
    bevor der Parser die Eingabegröße prüft.
 5. App und Installer sind nicht signiert. Kein Release-Publishing/CI eingerichtet.
    Bei Releases Versionen in Cargo.toml und NSIS sowie Paketdokumentation abstimmen.
+
+## Umsetzung und Prüfungen am 8. September 2026
+
+- Android-Feature `mobile`, Paket `de.leaf.reader`, ARM64, minSdk 24,
+  targetSdk 34, compileSdk 36. Speicherung über JNI-`getFilesDir()` im privaten
+  App-Verzeichnis; Speicherpfad wird einmal ermittelt.
+- `packaging/build-android.sh` erstellt `dist/Leaf-android-arm64.apk` und
+  SHA-256-Datei. Optimierter Rust-Release-Code, Android-Debugsignatur; keine
+  Store-Veröffentlichung oder produktive Release-Signatur.
+- Die Wiederherstellung wartet auf das Mounten und Layout-Frames. Ein
+  ResizeObserver berücksichtigt nachträgliche Größenänderungen beim Android-Start
+  bis zur ersten Benutzerinteraktion. Automatische Scrollereignisse während der
+  anfänglichen Wiederherstellung überschreiben den Lesestand nicht.
+- Dioxus 0.7.10 fängt Datei-Inputs für seinen Desktop-Dialog ab. Android verwendet
+  deshalb einen eigenen, außerhalb des Dioxus-Baums angelegten WebView-Dateiinput
+  (`assets/android-picker.js`). Die Eval-Verbindung bleibt während der Auswahl
+  offen; Übertragung in bestätigten 64-KiB-Blöcken, Größenprüfung vor dem Lesen.
+- Tatsächlich bestanden: vier Rust-Tests (einschließlich alter JSON-Zustände ohne
+  Scrollposition und atomarem Ersetzen mit Scrollposition), Desktop-Clippy mit
+  `-D warnings`, Formatprüfung, Shell-Syntaxprüfung und Web-Release-Build.
+  Der Web-Build meldet eine wasm-opt-DWARF-Warnung, wird aber erfolgreich beendet.
+- Chromium/Playwright gegen die gebaute Web-Version: 1234 px über Neuladen
+  wiederhergestellt, Kapitelwechsel beginnt bei 0, erneuter Klick auf das aktive
+  Kapitel erhält die Lesestelle.
+- Echter Android-Test auf Samsung Galaxy Tab A7 Lite SM-T220, Android 14:
+  APK per ADB installiert/aktualisiert, App gestartet; Test-EPUB über den
+  Android-Systemdateidialog aus Downloads importiert, Titel und zwei Kapitel
+  in Anzeige/Zustandsdatei geprüft. Scrollposition per WebView-DOM und
+  `reading.json` verglichen und nach `am force-stop` plus Kaltstart geprüft.
+- Testdatei: `/sdcard/Download/Leaf-Test.epub`. Anschließend hat der Benutzer
+  selbst die Dateiauswahl geöffnet; diese wurde offen gelassen. Keine vorhandenen
+  Benutzerbücher gelöscht. Ein zusätzlicher Wischtest während dieser Auswahl
+  konnte die Leseansicht nicht bedienen; die zuvor bestandene Kaltstartprüfung
+  erfolgte mit dem Beispielbuch. Abbrechen der Dateiauswahl noch nicht separat
+  auf dem Gerät geprüft.
+- Noch offen: große/reale EPUB-Dateien, weitere Android-Geräte, Rotation/
+  geänderte Schriftgröße und Release-Signierung. Die ältere Windows-EXE und
+  der Windows-Installer wurden in dieser Sitzung nicht neu gebaut.
+
 
 ## Wiedereinstieg
 

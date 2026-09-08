@@ -7,7 +7,7 @@ Ein eigenständiger EPUB-Reader in Rust und Dioxus 0.7. Die Desktop-App öffnet 
 ## Entwicklungsstand
 
 Version 0.1.0: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
-Windows-Installer und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
+Windows-Installer, Android-APK (ARM64) und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
 Der vollständige technische Stand und die nächsten offenen Prüfungen stehen in
 [PROJEKTSTAND.md](PROJEKTSTAND.md). Hinweise für spätere Arbeitssitzungen:
 [AGENTS.md](AGENTS.md).
@@ -113,16 +113,44 @@ cargo install cargo-xwin --locked
 Das Skript bindet die C-Laufzeit statisch ein und erstellt EXE, ZIP und SHA-256-Prüfsumme.
 [cargo-xwin](https://github.com/rust-cross/cargo-xwin) lädt dafür Microsoft CRT und Windows SDK in seinen lokalen Cache.
 
+## Android-APK (ARM64)
+
+Die lokale Datei `dist/Leaf-android-arm64.apk` ist für Android ab Version 7
+(API 24) auf ARM64-Geräten vorgesehen. Zum Installieren auf das Gerät kopieren
+und öffnen oder `adb install -r dist/Leaf-android-arm64.apk` verwenden.
+
+Erneut bauen: JDK 17, Android-SDK (Plattform 36), NDK und Dioxus CLI 0.7.10
+installieren, dann die Pfade an die eigene Installation anpassen:
+
+```sh
+export JAVA_HOME=/pfad/zum/jdk17
+export ANDROID_HOME="$HOME/Android/Sdk"
+export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/27.2.12479018"
+rustup target add aarch64-linux-android
+./packaging/build-android.sh
+```
+
+Die APK enthält optimierten Rust-Code, ist aber mit dem lokalen Android-Debugschlüssel
+signiert und als Testpaket gedacht. Für eine Veröffentlichung ist ein dauerhafter
+Release-Schlüssel erforderlich. Die Prüfsumme steht in
+`dist/Leaf-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
+EPUB-Import über die Android-Dateiauswahl und Wiederherstellung der Lesestelle
+nach vollständigem App-Neustart geprüft. Android speichert `reading.json` im privaten Dateienverzeichnis der
+App; eine Deinstallation entfernt diese Daten.
+
+Die Einrichtung folgt der [Dioxus-Mobile-Dokumentation](https://dioxuslabs.com/learn/0.7/guides/platforms/mobile/).
+Das Compile-SDK ist explizit auf 36 gesetzt, damit es zu den AndroidX-Abhängigkeiten passt.
+
 ## Funktionen und Speicherung
 
 - DRM-freie EPUB-Dateien lokal importieren (bis 30 MB)
 - Inhaltsverzeichnis aus den Dokumenten in EPUB-Spine-Reihenfolge
 - Kapitelnavigation, Schriftgröße und Hell-/Dunkelmodus
-- Letztes Buch, Kapitel und Einstellungen lokal speichern
+- Letztes Buch, Kapitel, aktuelle Scrollposition und Einstellungen automatisch lokal speichern
 - Responsive Leseansicht und deutsches Beispielbuch
 - Bereinigung importierter HTML-Inhalte; keine externen Buchressourcen
 
-Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. Gespeichert wird das Kapitel, nicht die genaue Scrollposition.
+Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. Die aktuelle Scrollposition wird während des Lesens gespeichert und beim erneuten Öffnen wiederhergestellt. Ein Kapitelwechsel beginnt oben. Die Position wird in Pixeln gespeichert; bei anderer Fenstergröße oder Schriftgröße kann sich der sichtbare Text verschieben.
 
 Diese Version konzentriert sich auf Text: eingebettete Bilder, Verlags-Stylesheets, PDF, DRM und EPUB-interne Links werden nicht unterstützt. Das Inhaltsverzeichnis verwendet Kapitelüberschriften, nicht die separate EPUB-Navigationsdatei.
 

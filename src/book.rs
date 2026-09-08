@@ -4,12 +4,12 @@ use std::{
     io::{Cursor, Read},
 };
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Chapter {
     pub title: String,
     pub html: String,
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Book {
     pub title: String,
     pub author: String,

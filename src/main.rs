@@ -13,6 +13,8 @@ struct Reading {
     chapter: usize,
     size: u32,
     dark: bool,
+    #[serde(default)]
+    scroll_top: f64,
 }
 impl Default for Reading {
     fn default() -> Self {
@@ -21,19 +23,70 @@ impl Default for Reading {
             chapter: 0,
             size: 20,
             dark: false,
+            scroll_top: 0.0,
         }
     }
 }
-fn restore() -> Reading {
-    let value = load_reading();
-    if let Some(mut state) = value.and_then(|value| serde_json::from_str::<Reading>(&value).ok())
-        && !state.book.chapters.is_empty()
-    {
+#[derive(Clone, Serialize, Deserialize)]
+struct Library {
+    books: Vec<Reading>,
+    active: Option<usize>,
+}
+impl Default for Library {
+    fn default() -> Self {
+        Self {
+            books: vec![Reading::default()],
+            active: None,
+        }
+    }
+}
+impl Library {
+    fn import(&mut self, book: book::Book) {
+        let index = self
+            .books
+            .iter()
+            .position(|entry| entry.book == book)
+            .unwrap_or_else(|| {
+                self.books.push(Reading {
+                    book,
+                    ..Reading::default()
+                });
+                self.books.len() - 1
+            });
+        self.active = Some(index);
+    }
+}
+fn decode_library(value: &str) -> Option<Library> {
+    let mut library = serde_json::from_str::<Library>(value).ok().or_else(|| {
+        serde_json::from_str::<Reading>(value)
+            .ok()
+            .map(|reading| Library {
+                books: vec![reading],
+                active: Some(0),
+            })
+    })?;
+    // Ungültige Kapitel dürfen weder Indexzugriffe noch einen falschen Buchwechsel auslösen.
+    let active = library
+        .active
+        .filter(|&i| i < library.books.len() && !library.books[i].book.chapters.is_empty());
+    library.active = active.map(|i| {
+        library.books[..i]
+            .iter()
+            .filter(|r| !r.book.chapters.is_empty())
+            .count()
+    });
+    library.books.retain(|r| !r.book.chapters.is_empty());
+    for state in &mut library.books {
         state.chapter = state.chapter.min(state.book.chapters.len() - 1);
         state.size = state.size.clamp(16, 28);
-        return state;
+        state.scroll_top = state.scroll_top.max(0.0);
     }
-    Reading::default()
+    Some(library)
+}
+fn restore() -> Library {
+    load_reading()
+        .and_then(|value| decode_library(&value))
+        .unwrap_or_default()
 }
 
 fn load_reading() -> Option<String> {
@@ -43,24 +96,65 @@ fn load_reading() -> Option<String> {
             .and_then(|w| w.local_storage().ok().flatten())
             .and_then(|s| s.get_item("leaf.reading").ok().flatten())
     }
-    #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+    #[cfg(all(
+        any(feature = "desktop", feature = "mobile"),
+        not(target_arch = "wasm32")
+    ))]
     {
         std::fs::read_to_string(storage_path()?).ok()
     }
-    #[cfg(all(not(feature = "desktop"), not(target_arch = "wasm32")))]
+    #[cfg(all(
+        not(any(feature = "desktop", feature = "mobile")),
+        not(target_arch = "wasm32")
+    ))]
     {
         None
     }
 }
 
-#[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+#[cfg(all(
+    any(feature = "desktop", feature = "mobile"),
+    not(target_arch = "wasm32")
+))]
 fn storage_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        static PATH: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+        PATH.get_or_init(android_storage_path).clone()
+    }
+    #[cfg(not(target_os = "android"))]
     directories::ProjectDirs::from("de", "leaf", "Leaf")
         .map(|dirs| dirs.data_local_dir().join("reading.json"))
 }
 
-#[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
-fn save_file(path: &std::path::Path, state: &Reading) -> std::io::Result<()> {
+#[cfg(target_os = "android")]
+fn android_storage_path() -> Option<std::path::PathBuf> {
+    let context = ndk_context::android_context();
+    // Dioxus/Wry hält VM und Activity während der App-Laufzeit gültig.
+    let vm = unsafe { jni::JavaVM::from_raw(context.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    let activity = unsafe { jni::objects::JObject::from_raw(context.context().cast()) };
+    let dir = env
+        .call_method(&activity, "getFilesDir", "()Ljava/io/File;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let dir = env.auto_local(dir);
+    let path = env
+        .call_method(&dir, "getAbsolutePath", "()Ljava/lang/String;", &[])
+        .ok()?
+        .l()
+        .ok()?;
+    let path = env.auto_local(jni::objects::JString::from(path));
+    let path: String = env.get_string(&path).ok()?.into();
+    Some(std::path::PathBuf::from(path).join("reading.json"))
+}
+
+#[cfg(all(
+    any(feature = "desktop", feature = "mobile"),
+    not(target_arch = "wasm32")
+))]
+fn save_file(path: &std::path::Path, state: &Library) -> std::io::Result<()> {
     use std::io::Write;
     let parent = path
         .parent()
@@ -74,7 +168,7 @@ fn save_file(path: &std::path::Path, state: &Reading) -> std::io::Result<()> {
     Ok(())
 }
 
-fn save(state: &Reading) -> bool {
+fn save(state: &Library) -> bool {
     #[cfg(target_arch = "wasm32")]
     {
         web_sys::window()
@@ -88,11 +182,17 @@ fn save(state: &Reading) -> bool {
             })
             .unwrap_or(false)
     }
-    #[cfg(all(feature = "desktop", not(target_arch = "wasm32")))]
+    #[cfg(all(
+        any(feature = "desktop", feature = "mobile"),
+        not(target_arch = "wasm32")
+    ))]
     {
         storage_path().is_some_and(|path| save_file(&path, state).is_ok())
     }
-    #[cfg(all(not(feature = "desktop"), not(target_arch = "wasm32")))]
+    #[cfg(all(
+        not(any(feature = "desktop", feature = "mobile")),
+        not(target_arch = "wasm32")
+    ))]
     {
         let _ = state;
         false
@@ -119,23 +219,78 @@ fn main() {
     dioxus::launch(App);
 }
 
-#[cfg(all(test, feature = "desktop", not(target_arch = "wasm32")))]
+#[cfg(all(
+    test,
+    any(feature = "desktop", feature = "mobile"),
+    not(target_arch = "wasm32")
+))]
 mod storage_tests {
     use super::*;
+    #[test]
+    fn old_reading_without_scroll_position_remains_readable() {
+        let mut value = serde_json::to_value(Reading::default()).unwrap();
+        value.as_object_mut().unwrap().remove("scroll_top");
+        let restored: Reading = serde_json::from_value(value).unwrap();
+        assert_eq!(restored.scroll_top, 0.0);
+    }
+
+    #[test]
+    fn migrates_legacy_book_with_reading_position() {
+        let reading = Reading {
+            chapter: 1,
+            scroll_top: 321.0,
+            ..Reading::default()
+        };
+        let library = decode_library(&serde_json::to_string(&reading).unwrap()).unwrap();
+        assert_eq!(library.active, Some(0));
+        assert_eq!(library.books[0].scroll_top, 321.0);
+        assert_eq!(library.books[0].chapter, 1);
+    }
+    #[test]
+    fn keeps_books_and_positions_when_closed_and_reopened() {
+        let mut library = Library::default();
+        assert_eq!(library.active, None);
+        library.books[0].scroll_top = 654.0;
+        let mut second = book::demo();
+        second.title = "Zweites Buch".into();
+        library.import(second.clone());
+        library.books[1].chapter = 1;
+        library.active = None;
+        let restored = decode_library(&serde_json::to_string(&library).unwrap()).unwrap();
+        assert_eq!(restored.active, None);
+        assert_eq!(restored.books.len(), 2);
+        assert_eq!(restored.books[0].scroll_top, 654.0);
+        assert_eq!(restored.books[1].chapter, 1);
+        library.import(second);
+        assert_eq!(library.books.len(), 2);
+        assert_eq!(library.active, Some(1));
+        assert_eq!(library.books[1].chapter, 1);
+    }
+    #[test]
+    fn invalid_active_index_returns_to_library() {
+        let mut library = Library::default();
+        library.active = Some(99);
+        assert_eq!(
+            decode_library(&serde_json::to_string(&library).unwrap())
+                .unwrap()
+                .active,
+            None
+        );
+    }
     #[test]
     fn saves_and_replaces_reading_without_leaving_temp_files() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("data/reading.json");
-        let mut state = Reading::default();
+        let mut state = Library::default();
         save_file(&path, &state).unwrap();
-        state.chapter = 1;
-        state.dark = true;
+        state.books[0].chapter = 1;
+        state.books[0].scroll_top = 1234.5;
+        state.active = None;
         save_file(&path, &state).unwrap();
-        let restored: Reading =
-            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(restored.chapter, 1);
-        assert!(restored.dark);
-        assert_eq!(restored.book.title, state.book.title);
+        let restored = decode_library(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(restored.books[0].chapter, 1);
+        assert_eq!(restored.books[0].scroll_top, 1234.5);
+        assert_eq!(restored.active, None);
         assert_eq!(
             std::fs::read_dir(path.parent().unwrap()).unwrap().count(),
             1
@@ -143,15 +298,88 @@ mod storage_tests {
     }
 }
 
+async fn pick_android_epub() -> Result<Option<Vec<u8>>, String> {
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Message {
+        bytes: Vec<u8>,
+        done: bool,
+        cancelled: bool,
+        error: Option<String>,
+    }
+    let mut picker = document::eval(include_str!("../assets/android-picker.js"));
+    let mut bytes = Vec::new();
+    loop {
+        let message: Message = picker
+            .recv()
+            .await
+            .map_err(|_| "Die Android-Dateiauswahl ist nicht verfügbar.".to_string())?;
+        if let Some(error) = message.error {
+            return Err(error);
+        }
+        if message.cancelled {
+            return Ok(None);
+        }
+        if bytes.len() + message.bytes.len() > 30 * 1024 * 1024 {
+            return Err("Das EPUB darf maximal 30 MB groß sein.".into());
+        }
+        bytes.extend(message.bytes);
+        if message.done {
+            return Ok(Some(bytes));
+        }
+        picker
+            .send(true)
+            .map_err(|_| "Die Dateiübertragung wurde unterbrochen.".to_string())?;
+    }
+}
+
 #[component]
-fn App() -> Element {
-    let mut reading = use_signal(restore);
-    let mut error = use_signal(String::new);
-    let mut busy = use_signal(|| false);
+fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> Element {
+    let mut reading = use_signal(move || library.peek().books[index].clone());
     let mut menu = use_signal(|| false);
-    let mut saved = use_signal(|| true);
     use_effect(move || {
-        saved.set(save(&reading.read()));
+        library.write().books[index] = reading.read().clone();
+    });
+    let mut reader_mounted = use_signal(|| false);
+    let mut position_ready = use_signal(|| false);
+    let location = use_memo(move || reading.read().chapter);
+    use_effect(move || {
+        if !reader_mounted() {
+            return;
+        }
+        let expected = location();
+        position_ready.set(false);
+        let top = reading.peek().scroll_top;
+        spawn(async move {
+            // Styles und Kapitelinhalt müssen vor der Wiederherstellung im Layout sein.
+            let _ = document::eval("await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);").await;
+            if *location.peek() == expected {
+                let _ = document::eval(&format!(
+                    r#"
+                    window.leafStopRestoring?.();
+                    const reader = document.querySelector('.reading-scroll');
+                    if (reader) {{
+                        const restore = () => reader.scrollTo({{top: {top}, behavior: 'instant'}});
+                        const observer = new ResizeObserver(restore);
+                        const events = ['pointerdown', 'touchstart', 'wheel', 'keydown'];
+                        const stop = () => {{
+                            observer.disconnect();
+                            for (const event of events) window.removeEventListener(event, stop, true);
+                        }};
+                        window.leafStopRestoring = stop;
+                        for (const event of events) window.addEventListener(event, stop, {{capture: true, passive: true}});
+                        observer.observe(reader);
+                        if (reader.firstElementChild) observer.observe(reader.firstElementChild);
+                        restore();
+                    }}
+                    "#
+                )).await;
+                position_ready.set(true);
+            }
+        });
+    });
+    use_drop(move || {
+        let _ = document::eval("window.leafStopRestoring?.();");
     });
     let state = reading.read().clone();
     let chapter = &state.book.chapters[state.chapter];
@@ -163,30 +391,13 @@ fn App() -> Element {
             aside { class: if menu() { "sidebar open" } else { "sidebar" },
                 a { class: "brand", href: "#", "◒" span { "leaf" } }
                 p { class: "tagline", "Ein guter Ort für Geschichten." }
-                label { class: "import", r#for: "epub", if busy() { "Wird geöffnet …" } else { "+  EPUB öffnen" } }
-                input { id: "epub", class: "file-input", r#type: "file", accept: ".epub,application/epub+zip", disabled: busy(),
-                    onchange: move |evt| async move {
-                        let files = evt.files();
-                        if let Some(file) = files.first() {
-                            busy.set(true); error.set(String::new());
-                            match file.read_bytes().await {
-                                Ok(bytes) => match book::parse(&bytes) {
-                                    Ok(book) => { let mut r = reading.write(); r.book = book; r.chapter = 0; menu.set(false); }
-                                    Err(message) => error.set(message),
-                                },
-                                Err(_) => error.set("Die Datei konnte nicht gelesen werden.".into()),
-                            }
-                            busy.set(false);
-                        }
-                    }
-                }
-                if !error().is_empty() { p { class: "notice", role: "alert", "{error}" } }
+                ImportBook { onimport: move |book| library.write().import(book) }
                 div { class: "section-label", "DEIN BUCH" }
                 div { class: "book-card", div { class: "cover", "L" } div { strong { "{state.book.title}" } small { "{state.book.author}" } } }
                 div { class: "section-label contents-label", "INHALT" span { "{count} Kapitel" } }
                 nav { aria_label: "Inhaltsverzeichnis",
                     for (index, ch) in state.book.chapters.iter().enumerate() {
-                        button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| { reading.write().chapter = index; menu.set(false); },
+                        button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| { let mut r = reading.write(); if r.chapter != index { r.chapter = index; r.scroll_top = 0.0; } menu.set(false); },
                             span { class: "chapter-number", "{index + 1:02}" } span { "{ch.title}" }
                         }
                     }
@@ -196,7 +407,11 @@ fn App() -> Element {
             main {
                 header {
                     button { class: "mobile-menu icon-button", aria_label: "Inhaltsverzeichnis umschalten", onclick: move |_| menu.toggle(), "☰" }
-                    div { class: "breadcrumb", "DEIN LESEMOMENT" span { " / " } "{state.book.title}" }
+                    button { class: "close-book", onclick: move |_| {
+                        let mut state = library.write();
+                        state.books[index] = reading.peek().clone();
+                        state.active = None;
+                    }, "Buch schließen" }
                     div { class: "tools",
                         button { class: "icon-button", aria_label: "Schrift verkleinern", disabled: state.size <= 16, onclick: move |_| { reading.write().size -= 2; }, "A−" }
                         span { class: "font-size", "{state.size}" }
@@ -205,7 +420,16 @@ fn App() -> Element {
                         button { class: "icon-button", aria_label: "Farbschema wechseln", onclick: move |_| { let dark = reading.read().dark; reading.write().dark = !dark; }, if state.dark { "☀" } else { "☾" } }
                     }
                 }
-                div { class: "reading-scroll", key: "{state.book.title}-{state.chapter}",
+                div { class: "reading-scroll", "data-position-ready": "{position_ready}",
+                    onmounted: move |_| reader_mounted.set(true),
+                    onscroll: move |event| {
+                        if !position_ready() { return; }
+                        let top = event.scroll_top().max(0.0);
+                        if (reading.peek().scroll_top - top).abs() > 0.5 {
+                            reading.write().scroll_top = top;
+                        }
+                    },
+                    key: "{index}-{state.chapter}",
                     article { style: "--reading-size: {state.size}px",
                         div { class: "eyebrow", span {} "KAPITEL {state.chapter + 1} VON {count}" }
                         h1 { "{chapter.title}" }
@@ -213,15 +437,102 @@ fn App() -> Element {
                         div { class: "prose", dangerous_inner_html: "{chapter.html}" }
                         div { class: "chapter-end", "· · ·" }
                         div { class: "navigation",
-                            button { disabled: state.chapter == 0, onclick: move |_| { reading.write().chapter -= 1; }, "← Zurück" }
+                            button { disabled: state.chapter == 0, onclick: move |_| { let mut r = reading.write(); r.chapter -= 1; r.scroll_top = 0.0; }, "← Zurück" }
                             span { "{state.chapter + 1} / {count}" }
-                            button { disabled: state.chapter + 1 >= count, onclick: move |_| { reading.write().chapter += 1; }, "Weiter →" }
+                            button { disabled: state.chapter + 1 >= count, onclick: move |_| { let mut r = reading.write(); r.chapter += 1; r.scroll_top = 0.0; }, "Weiter →" }
                         }
                     }
                     footer { "Eine Seite nach der anderen." span { "Nimm dir Zeit." } }
                 }
                 div { class: "progress-track", div { style: "width: {progress}%" } }
                 div { class: "bottom-bar", span { "{state.book.author}" } span { "Kapitel {state.chapter + 1} von {count}" } }
+            }
+        }
+    }
+}
+
+#[component]
+fn ImportBook(onimport: EventHandler<book::Book>) -> Element {
+    let mut error = use_signal(String::new);
+    let mut busy = use_signal(|| false);
+    rsx! {
+                if cfg!(target_os = "android") {
+                    button { class: "import", disabled: busy(),
+                        onclick: move |_| async move {
+                            busy.set(true);
+                            error.set(String::new());
+                            match pick_android_epub().await {
+                                Ok(Some(bytes)) => match book::parse(&bytes) {
+                                    Ok(book) => {
+                                        onimport.call(book);
+                                    }
+                                    Err(message) => error.set(message),
+                                },
+                                Ok(None) => {},
+                                Err(message) => error.set(message),
+                            }
+                            busy.set(false);
+                        },
+                        if busy() { "Wird geöffnet …" } else { "+  EPUB öffnen" }
+                    }
+                } else {
+                label { class: "import", r#for: "epub", if busy() { "Wird geöffnet …" } else { "+  EPUB öffnen" } }
+                input { id: "epub", class: "file-input", r#type: "file", accept: ".epub,application/epub+zip", disabled: busy(),
+                    onchange: move |evt| async move {
+                        let files = evt.files();
+                        if let Some(file) = files.first() {
+                            busy.set(true); error.set(String::new());
+                            match file.read_bytes().await {
+                                Ok(bytes) => match book::parse(&bytes) {
+                                    Ok(book) => { onimport.call(book); }
+                                    Err(message) => error.set(message),
+                                },
+                                Err(_) => error.set("Die Datei konnte nicht gelesen werden.".into()),
+                            }
+                            busy.set(false);
+                        }
+                    }
+                }
+                }
+                if !error().is_empty() { p { class: "notice", role: "alert", "{error}" } }
+
+    }
+}
+
+#[component]
+fn App() -> Element {
+    let mut library = use_signal(restore);
+    let mut saved = use_signal(|| true);
+    use_effect(move || saved.set(save(&library.read())));
+    let active = use_memo(move || library.read().active);
+    rsx! {
+        document::Style { {include_str!("../assets/main.css")} }
+        if let Some(index) = active() {
+            Reader { key: "{index}", library, index, saved }
+        } else {
+            main { class: "library",
+                header { div { class: "brand", "◒" span { "leaf" } } span { "Deine Bücher. Dein Lesemoment." } }
+                section { class: "library-content",
+                    div { class: "library-heading",
+                        div { h1 { "Deine Bücher" } p { "Wähle ein Buch und lies dort weiter, wo du aufgehört hast." } }
+                        div { class: "library-import", ImportBook { onimport: move |book| library.write().import(book) } }
+                    }
+                    if !saved() { p { class: "notice", role: "alert", "Speicher voll oder nicht verfügbar" } }
+                    if library.read().books.is_empty() {
+                        p { class: "empty-library", "Noch keine Bücher vorhanden. Öffne eine EPUB-Datei, um sie deiner Übersicht hinzuzufügen." }
+                    }
+                    div { class: "books-grid",
+                        for (index, entry) in library.read().books.iter().enumerate() {
+                            button { class: "library-book", onclick: move |_| library.write().active = Some(index),
+                                div { class: "library-cover", "◒" }
+                                strong { "{entry.book.title}" }
+                                small { "{entry.book.author}" }
+                                span { "Kapitel {entry.chapter + 1} von {entry.book.chapters.len()}" }
+                                span { class: "resume-book", "Buch öffnen →" }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
