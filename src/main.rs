@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 struct Reading {
     book: book::Book,
     chapter: usize,
+    #[serde(default)]
+    page: usize,
     size: u32,
     dark: bool,
     #[serde(default)]
@@ -21,6 +23,7 @@ impl Default for Reading {
         Self {
             book: book::demo(),
             chapter: 0,
+            page: 0,
             size: 20,
             dark: false,
             scroll_top: 0.0,
@@ -83,10 +86,115 @@ fn decode_library(value: &str) -> Option<Library> {
     }
     Some(library)
 }
+
+#[derive(Deserialize)]
+struct PageMetrics {
+    count: usize,
+    page: usize,
+}
+
+const PAGE_SAFE_INSET: f64 = 56.0;
+
+fn page_height(viewport_height: f64) -> f64 {
+    (viewport_height - 2.0 * PAGE_SAFE_INSET).max(1.0)
+}
+
+fn turn_page(delta: i32) {
+    spawn(async move {
+        let _ = document::eval(&format!(
+            "const reader = document.querySelector('.reading-scroll'); if (reader) reader.__leafTurnPage?.({});",
+            delta
+        ))
+        .await;
+    });
+}
+
+fn install_page_gestures() {
+    spawn(async move {
+        let _ = document::eval(
+            r#"
+            window.leafPageGestureCleanup?.();
+            const reader = document.querySelector('.reading-scroll');
+            if (reader) {
+                const lineAt = y => {
+                    const box = reader.getBoundingClientRect();
+                    for (const x of [box.left + 42, box.left + box.width / 2, box.right - 42]) {
+                        const caret = document.caretRangeFromPoint?.(x, y);
+                        if (!caret || caret.startContainer.nodeType !== Node.TEXT_NODE) continue;
+                        const text = caret.startContainer;
+                        if (!text.textContent.length) continue;
+                        const offset = Math.min(Math.max(0, caret.startOffset), text.textContent.length - 1);
+                        const range = document.createRange();
+                        range.setStart(text, offset);
+                        range.setEnd(text, offset + 1);
+                        const rect = range.getBoundingClientRect();
+                        if (rect.height > 0) return rect;
+                    }
+                    return null;
+                };
+                reader.__leafAlignPage = () => {
+                    let box = reader.getBoundingClientRect();
+                    const topLine = lineAt(box.top + 1);
+                    if (topLine && topLine.top < box.top) {
+                        reader.scrollBy({ top: topLine.bottom - box.top + 1, behavior: 'instant' });
+                    }
+                    box = reader.getBoundingClientRect();
+                    const bottomLine = lineAt(box.bottom - 1);
+                    if (bottomLine && bottomLine.top < box.bottom && bottomLine.bottom > box.bottom) {
+                        reader.scrollBy({ top: -(box.bottom - bottomLine.top + 1), behavior: 'instant' });
+                    }
+                };
+                reader.__leafTurnPage = delta => {
+                    reader.scrollBy({ top: delta * Math.max(1, reader.clientHeight - 112), behavior: 'instant' });
+                    reader.__leafAlignPage();
+                };
+                let start_x = null;
+                const start = event => {
+                    event.preventDefault();
+                    start_x = event.touches[0]?.clientX ?? null;
+                };
+                const move = event => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                };
+                const end = event => {
+                    const end_x = event.changedTouches[0]?.clientX;
+                    if (start_x !== null && end_x !== undefined) {
+                        const distance = start_x - end_x;
+                        if (Math.abs(distance) >= 48) {
+                            reader.__leafTurnPage(Math.sign(distance));
+                        }
+                    }
+                    start_x = null;
+                };
+                reader.addEventListener('touchstart', start, { passive: false, capture: true });
+                reader.addEventListener('touchmove', move, { passive: false, capture: true });
+                reader.addEventListener('touchend', end, { passive: false, capture: true });
+                reader.addEventListener('touchcancel', end, { passive: false, capture: true });
+                window.leafPageGestureCleanup = () => {
+                    reader.removeEventListener('touchstart', start, true);
+                    reader.removeEventListener('touchmove', move, true);
+                    reader.removeEventListener('touchend', end, true);
+                    reader.removeEventListener('touchcancel', end, true);
+                };
+            }
+            "#,
+        )
+        .await;
+    });
+}
 fn restore() -> Library {
     load_reading()
         .and_then(|value| decode_library(&value))
         .unwrap_or_default()
+}
+
+fn cover_letter(title: &str) -> char {
+    title
+        .chars()
+        .find(|character| character.is_alphanumeric())
+        .map(|character| character.to_uppercase().next().unwrap_or(character))
+        .unwrap_or('B')
 }
 
 fn load_reading() -> Option<String> {
@@ -227,11 +335,13 @@ fn main() {
 mod storage_tests {
     use super::*;
     #[test]
-    fn old_reading_without_scroll_position_remains_readable() {
+    fn old_reading_without_position_or_page_remains_readable() {
         let mut value = serde_json::to_value(Reading::default()).unwrap();
         value.as_object_mut().unwrap().remove("scroll_top");
+        value.as_object_mut().unwrap().remove("page");
         let restored: Reading = serde_json::from_value(value).unwrap();
         assert_eq!(restored.scroll_top, 0.0);
+        assert_eq!(restored.page, 0);
     }
 
     #[test]
@@ -268,8 +378,10 @@ mod storage_tests {
     }
     #[test]
     fn invalid_active_index_returns_to_library() {
-        let mut library = Library::default();
-        library.active = Some(99);
+        let library = Library {
+            active: Some(99),
+            ..Library::default()
+        };
         assert_eq!(
             decode_library(&serde_json::to_string(&library).unwrap())
                 .unwrap()
@@ -337,54 +449,53 @@ async fn pick_android_epub() -> Result<Option<Vec<u8>>, String> {
 fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> Element {
     let mut reading = use_signal(move || library.peek().books[index].clone());
     let mut menu = use_signal(|| false);
+    let mut page_count = use_signal(|| 1usize);
     use_effect(move || {
         library.write().books[index] = reading.read().clone();
     });
     let mut reader_mounted = use_signal(|| false);
     let mut position_ready = use_signal(|| false);
-    let location = use_memo(move || reading.read().chapter);
+    let location = use_memo(move || (reading.read().chapter, reading.read().size));
     use_effect(move || {
         if !reader_mounted() {
             return;
         }
         let expected = location();
         position_ready.set(false);
-        let top = reading.peek().scroll_top;
+        page_count.set(1);
+        let saved_page = reading.peek().page;
         spawn(async move {
-            // Styles und Kapitelinhalt müssen vor der Wiederherstellung im Layout sein.
+            // Styles und Kapitelinhalt müssen vor der Seitenermittlung im Layout sein.
             let _ = document::eval("await new Promise(requestAnimationFrame); await new Promise(requestAnimationFrame);").await;
             if *location.peek() == expected {
-                let _ = document::eval(&format!(
+                let mut evaluator = document::eval(&format!(
                     r#"
-                    window.leafStopRestoring?.();
                     const reader = document.querySelector('.reading-scroll');
                     if (reader) {{
-                        const restore = () => reader.scrollTo({{top: {top}, behavior: 'instant'}});
-                        const observer = new ResizeObserver(restore);
-                        const events = ['pointerdown', 'touchstart', 'wheel', 'keydown'];
-                        const stop = () => {{
-                            observer.disconnect();
-                            for (const event of events) window.removeEventListener(event, stop, true);
-                        }};
-                        window.leafStopRestoring = stop;
-                        for (const event of events) window.addEventListener(event, stop, {{capture: true, passive: true}});
-                        observer.observe(reader);
-                        if (reader.firstElementChild) observer.observe(reader.firstElementChild);
-                        restore();
+                        const height = Math.max(1, reader.clientHeight - 112);
+                        const count = Math.max(1, Math.ceil(reader.scrollHeight / height));
+                        const page = Math.min({saved_page}, count - 1);
+                        reader.scrollTo({{left: 0, top: page * height, behavior: 'instant'}});
+                        reader.__leafAlignPage?.();
+                        dioxus.send({{count, page}});
                     }}
                     "#
-                )).await;
-                position_ready.set(true);
+                ));
+                if let Ok(metrics) = evaluator.recv::<PageMetrics>().await
+                    && *location.peek() == expected
+                {
+                    page_count.set(metrics.count);
+                    reading.write().page = metrics.page;
+                    position_ready.set(true);
+                }
             }
         });
-    });
-    use_drop(move || {
-        let _ = document::eval("window.leafStopRestoring?.();");
     });
     let state = reading.read().clone();
     let chapter = &state.book.chapters[state.chapter];
     let count = state.book.chapters.len();
     let progress = (state.chapter + 1) * 100 / count;
+    let pages = page_count();
     rsx! {
         document::Style { {include_str!("../assets/main.css")} }
         div { class: if state.dark { "app dark" } else { "app" },
@@ -397,7 +508,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                 div { class: "section-label contents-label", "INHALT" span { "{count} Kapitel" } }
                 nav { aria_label: "Inhaltsverzeichnis",
                     for (index, ch) in state.book.chapters.iter().enumerate() {
-                        button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| { let mut r = reading.write(); if r.chapter != index { r.chapter = index; r.scroll_top = 0.0; } menu.set(false); },
+                        button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| { let mut r = reading.write(); if r.chapter != index { r.chapter = index; r.page = 0; r.scroll_top = 0.0; } menu.set(false); },
                             span { class: "chapter-number", "{index + 1:02}" } span { "{ch.title}" }
                         }
                     }
@@ -420,13 +531,24 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         button { class: "icon-button", aria_label: "Farbschema wechseln", onclick: move |_| { let dark = reading.read().dark; reading.write().dark = !dark; }, if state.dark { "☀" } else { "☾" } }
                     }
                 }
-                div { class: "reading-scroll", "data-position-ready": "{position_ready}",
-                    onmounted: move |_| reader_mounted.set(true),
+                div { class: "reading-scroll", tabindex: "0", "data-position-ready": "{position_ready}",
+                    onmounted: move |_| {
+                        reader_mounted.set(true);
+                        install_page_gestures();
+                    },
                     onscroll: move |event| {
                         if !position_ready() { return; }
+                        let height = page_height(event.client_height().max(1) as f64);
                         let top = event.scroll_top().max(0.0);
-                        if (reading.peek().scroll_top - top).abs() > 0.5 {
-                            reading.write().scroll_top = top;
+                        let current_page = (top / height).round() as usize;
+                        let current_count = ((event.scroll_height().max(1) as f64) / height).ceil() as usize;
+                        page_count.set(current_count.max(1));
+                        if reading.peek().page != current_page
+                            || (reading.peek().scroll_top - top).abs() > 0.5
+                        {
+                            let mut state = reading.write();
+                            state.page = current_page;
+                            state.scroll_top = top;
                         }
                     },
                     key: "{index}-{state.chapter}",
@@ -436,13 +558,18 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         div { class: "ornament", "✳" }
                         div { class: "prose", dangerous_inner_html: "{chapter.html}" }
                         div { class: "chapter-end", "· · ·" }
-                        div { class: "navigation",
-                            button { disabled: state.chapter == 0, onclick: move |_| { let mut r = reading.write(); r.chapter -= 1; r.scroll_top = 0.0; }, "← Zurück" }
-                            span { "{state.chapter + 1} / {count}" }
-                            button { disabled: state.chapter + 1 >= count, onclick: move |_| { let mut r = reading.write(); r.chapter += 1; r.scroll_top = 0.0; }, "Weiter →" }
+                        div { class: "chapter-navigation",
+                            button { disabled: state.chapter == 0, onclick: move |_| { let mut r = reading.write(); r.chapter -= 1; r.page = 0; r.scroll_top = 0.0; }, "← Kapitel" }
+                            span { "Kapitel {state.chapter + 1} / {count}" }
+                            button { disabled: state.chapter + 1 >= count, onclick: move |_| { let mut r = reading.write(); r.chapter += 1; r.page = 0; r.scroll_top = 0.0; }, "Kapitel →" }
                         }
                     }
                     footer { "Eine Seite nach der anderen." span { "Nimm dir Zeit." } }
+                }
+                div { class: "page-controls", aria_label: "Seitennavigation",
+                    button { disabled: state.page == 0, onclick: move |_| turn_page(-1), "← Seite" }
+                    span { "Seite {state.page + 1} / {pages}" }
+                    button { disabled: state.page + 1 >= pages, onclick: move |_| turn_page(1), "Seite →" }
                 }
                 div { class: "progress-track", div { style: "width: {progress}%" } }
                 div { class: "bottom-bar", span { "{state.book.author}" } span { "Kapitel {state.chapter + 1} von {count}" } }
@@ -521,13 +648,19 @@ fn App() -> Element {
                     if library.read().books.is_empty() {
                         p { class: "empty-library", "Noch keine Bücher vorhanden. Öffne eine EPUB-Datei, um sie deiner Übersicht hinzuzufügen." }
                     }
-                    div { class: "books-grid",
+                    div { class: "library-list", aria_label: "Bücherübersicht",
                         for (index, entry) in library.read().books.iter().enumerate() {
                             button { class: "library-book", onclick: move |_| library.write().active = Some(index),
-                                div { class: "library-cover", "◒" }
-                                strong { "{entry.book.title}" }
-                                small { "{entry.book.author}" }
-                                span { "Kapitel {entry.chapter + 1} von {entry.book.chapters.len()}" }
+                                div { class: "library-cover", style: "--cover-tone: {index * 47 % 360}deg",
+                                    span { class: "cover-monogram", "{cover_letter(&entry.book.title)}" }
+                                    span { class: "cover-title", "{entry.book.title}" }
+                                    span { class: "cover-author", "{entry.book.author}" }
+                                }
+                                div { class: "library-book-details",
+                                    strong { "{entry.book.title}" }
+                                    small { "{entry.book.author}" }
+                                    span { "Kapitel {entry.chapter + 1} von {entry.book.chapters.len()}" }
+                                }
                                 span { class: "resume-book", "Buch öffnen →" }
                             }
                         }

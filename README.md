@@ -145,12 +145,12 @@ Das Compile-SDK ist explizit auf 36 gesetzt, damit es zu den AndroidX-Abhängigk
 
 - DRM-freie EPUB-Dateien lokal importieren (bis 30 MB)
 - Inhaltsverzeichnis aus den Dokumenten in EPUB-Spine-Reihenfolge
-- Kapitelnavigation, Schriftgröße und Hell-/Dunkelmodus
-- Letztes Buch, Kapitel, aktuelle Scrollposition und Einstellungen automatisch lokal speichern
+- Seiten- und Kapitelnavigation, Schriftgröße und Hell-/Dunkelmodus
+- Letztes Buch, Kapitel, aktuelle Seite und Einstellungen automatisch lokal speichern
 - Responsive Leseansicht und deutsches Beispielbuch
 - Bereinigung importierter HTML-Inhalte; keine externen Buchressourcen
 
-Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. Die aktuelle Scrollposition wird während des Lesens gespeichert und beim erneuten Öffnen wiederhergestellt. Ein Kapitelwechsel beginnt oben. Die Position wird in Pixeln gespeichert; bei anderer Fenstergröße oder Schriftgröße kann sich der sichtbare Text verschieben.
+Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. Freies Scrollen ist in der Leseansicht ausgeschaltet: Horizontale Wischgesten und die Seitentasten wechseln jeweils genau eine Seite. Seitengrenzen werden an gerenderten Textzeilen ausgerichtet, damit die Navigationsleiste keine halbe Zeile verdeckt. Die aktuelle Seite wird beim erneuten Öffnen wiederhergestellt. Ein Kapitelwechsel beginnt auf Seite 1. Da die Seiten dynamisch aus Fenstergröße und Schriftgröße entstehen, kann sich die exakte Textstelle nach einer Layoutänderung verschieben.
 
 Diese Version konzentriert sich auf Text: eingebettete Bilder, Verlags-Stylesheets, PDF, DRM und EPUB-interne Links werden nicht unterstützt. Das Inhaltsverzeichnis verwendet Kapitelüberschriften, nicht die separate EPUB-Navigationsdatei.
 

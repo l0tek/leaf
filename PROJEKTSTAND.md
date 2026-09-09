@@ -15,9 +15,10 @@ Windows-x64-EXE und einen Windows-Installer mit bedarfsgerechter Installation vo
 WebView2 erweitert. Desktop ist das Standard-Cargo-Feature; Web bleibt optional.
 Die Oberfläche und das Beispielbuch sind deutsch. Bücher werden lokal verarbeitet.
 
-Aktueller Auftrag: Projektstatus prüfen, aktuelle Lesestelle automatisch speichern
-und eine Android-APK erstellen. Zu Beginn war der Git-Arbeitsstand sauber.
-Kein Commit oder Push für diese Sitzung beauftragt.
+Aktueller Auftrag: Windows-Installer erstellen sowie die fertigen Änderungen
+committen und pushen.
+Zu Beginn waren Änderungen an der Übergabedatei, der Oberfläche und dem Rust-Code
+vorhanden. Kein Commit oder Push für diese Sitzung beauftragt.
 
 ## Implementiert
 
@@ -25,10 +26,14 @@ Kein Commit oder Push für diese Sitzung beauftragt.
 - HTML-Bereinigung mit Ammonia; Skripte, Bilder, Links und Buch-CSS entfernt.
 - Kapitelliste, Vor/Zurück, Schriftgröße 16–28 px, Hell-/Dunkelmodus.
 - Responsive Oberfläche und eingebautes Beispielbuch.
-- Ein zuletzt geöffnetes Buch samt Kapitel, Scrollposition und Einstellungen gespeichert.
-  Die Scrollposition wird bei Scrollereignissen gespeichert und nach Einbinden der Leseansicht
-  bei fertigem Layout wiederhergestellt; Kapitelwechsel und Buchimport beginnen oben. Alte Zustände
-  ohne Scrollposition bleiben lesbar (Serde-Default 0).
+- Buchübersicht als Listenansicht mit lokal erzeugten Coverkarten aus Titel und
+  Autor; EPUB-Coverbilder werden weiterhin nicht importiert.
+- Ein zuletzt geöffnetes Buch samt Kapitel, Seite und Einstellungen gespeichert.
+  Seitentasten und vertikale Wischgesten springen jeweils um eine Viewporthöhe;
+  freies Scrollen ist deaktiviert. Die Seitennummer wird bei Scrollereignissen
+  gespeichert und nach Einbinden der Leseansicht bei fertigem Layout wiederhergestellt.
+  Kapitelwechsel und Buchimport beginnen auf Seite 1. Alte Zustände ohne Seitennummer
+  bleiben lesbar (Serde-Default 0).
 - Native Speicherung als JSON über temporäre Datei und anschließendes Ersetzen;
   im Browser über Local Storage. Speicherfehler werden angezeigt.
 - Desktop-Fenster 1120 × 800, Mindestgröße 420 × 520.
@@ -126,8 +131,9 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
    aus Kapitelüberschriften, nicht aus EPUB-NAV/NCX.
 3. Textorientierter MVP: keine Bilder, PDF, DRM, eingebetteten Buchstile,
    internen Links, Suche, Lesezeichen oder Mehrbuch-Bibliothek.
-4. Die Scrollposition wird in Pixeln gespeichert; Größen-/Schriftänderungen können
-   den sichtbaren Text verschieben. Bei jedem Speichern wird derzeit das gesamte
+4. Die Seitennummer wird gespeichert; Größen-/Schriftänderungen können die exakte
+   sichtbare Textstelle verschieben, weil Seiten dynamisch aus dem Layout entstehen.
+   Bei jedem Speichern wird derzeit das gesamte
    Buch serialisiert; bei großen Büchern ist die Scrollleistung noch zu prüfen.
    Web-Speicher ist begrenzt. Parser-Limits: 30 MiB Eingabedatei, 8 MiB pro Textelement,
    40 MiB gesamte Kapitelquellen. Die Dateiauswahl liest zunächst die Datei,
@@ -182,3 +188,124 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
    nicht als getestet darstellen, solange kein Windows-Laufzeittest vorliegt.
 4. Nach Abschluss neue Entscheidungen, offene Punkte und Testergebnisse hier
    nachtragen. Commit/Push nur entsprechend dem jeweils autorisierten Auftrag.
+
+## Umsetzung und Prüfungen am 9. September 2026
+
+- Projektüberblick, `README.md`, Git-Status und vorhandene Build-Skripte geprüft;
+  Arbeitsbaum war und ist bis auf diese Übergabedatei sauber.
+- Frischer Linux-Desktop-Release mit `cargo build --locked --release` erstellt:
+  `target/release/leaf` (x86-64-ELF, 9,3 MiB).
+- Frische Android-ARM64-Test-APK mit `packaging/build-android.sh` erstellt:
+  `dist/Leaf-android-arm64.apk` (23 MiB) einschließlich SHA-256-Datei.
+- Frische Windows-x64-Ausgabe mit `packaging/build-windows.sh` erstellt:
+  `dist/windows-x64/Leaf.exe` (PE32+-GUI, 6,4 MiB), portablem ZIP und SHA-256-Datei.
+  Dafür wurde lokal `cargo-xwin` 0.23.1 installiert und der Clang/Lld-Linker des
+  vorhandenen Android-NDK verwendet. Die bekannten LNK4099-Hinweise zu fehlenden
+  Microsoft-PDB-Dateien traten auf, der Build endete dennoch erfolgreich.
+- Verifiziert: beide SHA-256-Prüfsummen, ZIP-Archivtest sowie Dateiformate. Kein
+  Laufzeittest auf Android, Linux oder Windows in dieser Sitzung; insbesondere
+  ersetzt der Cross-Build keinen Windows-Laufzeittest.
+- `dist/Leaf-android-arm64.apk` mit `adb install -r` auf dem per USB erkannten
+  Samsung Galaxy Tab A7 Lite SM-T220 (`R9JRB01BT5M`) installiert/aktualisiert;
+  die Paketabfrage bestätigt `de.leaf.reader`, VersionCode 1, minSdk 24 und
+  targetSdk 34. Bestehende App-Daten bleiben bei dieser Update-Installation erhalten.
+- Frischen Windows-Installer mit `packaging/build-installer.sh` erstellt:
+  `dist/Leaf-Setup-x64.exe` (NSIS-PE, 3,4 MiB) und SHA-256-Datei. Wegen fehlender
+  Systempakete wurden NSIS 3.10, nsis-common und osslsigncode nur temporär unter
+  `/tmp/leaf-installer-tools.*` entpackt. Der Build prüfte den eingebetteten
+  Microsoft-WebView2-Bootstrapper erfolgreich; Installer-Prüfsumme bestätigt.
+- Die Buchübersicht auf eine Listenansicht umgestellt. Jede Zeile hat eine eigene,
+  aus Titel und Autor erzeugte Coverkarte, Metadaten, Lesefortschritt und den
+  Öffnen-Hinweis. Auf kleinen Bildschirmen werden Cover und Typografie verdichtet.
+- Bestanden: `cargo fmt --check`, `cargo test` (7 Tests),
+  `cargo clippy --all-targets -- -D warnings` und Web-Release-Build. Der
+  Web-Build meldet weiterhin die bekannte wasm-opt-DWARF-Warnung, beendet den
+  Client-Build aber erfolgreich.
+- APK nach der Listenansichts-Änderung frisch mit `packaging/build-android.sh`
+  erstellt und per `adb install -r` auf dem Samsung Galaxy Tab A7 Lite SM-T220
+  installiert/aktualisiert. `de.leaf.reader` ist als VersionCode 1, minSdk 24
+  und targetSdk 34 vorhanden; die APK-Prüfsumme ist bestätigt.
+- Seitenweise Leseansicht umgesetzt: Die dauerhaft sichtbaren Seitentasten springen
+  um eine Viewporthöhe; vertikales Wischen/Trackpad-Scrollen bleibt verfügbar.
+  Kapitelaktionen bleiben separat. Die berechnete Seitennummer wird gespeichert und
+  nach Layoutaufbau wiederhergestellt; alte Zustände ohne Feld starten auf Seite 1.
+- Bestanden: `cargo fmt --check`, `cargo test` (7 Tests einschließlich Migration
+  ohne Seitennummer), `cargo clippy --all-targets -- -D warnings`, Web-Check und
+  Linux-Release-Build. Der Web-Release-Build meldet weiterhin die bekannte
+  wasm-opt-DWARF-Warnung, erstellt die Client-Ausgabe jedoch erfolgreich.
+- Frische Seitenansichts-APK mit `packaging/build-android.sh` erstellt und per
+  `adb install -r` auf dem Samsung Galaxy Tab A7 Lite SM-T220 installiert.
+  Paketpfad, VersionCode 1, minSdk 24 und targetSdk 34 sind per ADB bestätigt;
+  die APK-Prüfsumme ist gültig. Die Update-Installation erhält vorhandene App-Daten.
+- Frische Windows-x64-EXE, portables ZIP und NSIS-Installer erstellt. Der Installer
+  nutzt die neue EXE und enthält den bei jedem Build erneut gegen Microsoft-Roots
+  geprüften WebView2-Bootstrapper. APK-, EXE- und Installer-Prüfsummen sowie der
+  ZIP-Archivtest sind erfolgreich. Der Cross-Linker meldete die bekannten
+  LNK4099-Hinweise zu fehlenden Microsoft-PDB-Dateien; ein Windows-Laufzeittest
+  wurde weiterhin nicht durchgeführt.
+- Android-Korrektur: Die erste horizontale CSS-Spaltenvariante blendete bei Android
+  den Text und die Navigation aus; eine feste Spaltenfläche überschritt zusätzlich
+  das Tile-Speicherlimit des WebView. Ersetzt durch vertikalen, nativen Lesescroll
+  und dauerhaft sichtbare Seitentasten. Auf dem SM-T220 geprüft: nach dem WebView-
+  Start erscheint Seite 1 von 42, `Seite →` wechselt zu Seite 2 von 42, ein
+  anschließender Wisch zu Seite 3 von 42.
+- Die korrigierte APK installiert sowie Windows-EXE, ZIP und Installer erneut
+  erstellt. `cargo fmt --check`, 7 Rust-Tests und Clippy mit `-D warnings` sind
+  bestanden; APK-, EXE- und Installer-Prüfsummen sowie ZIP-Archivtest sind gültig.
+- Freies Scrollen abgeschaltet: Die Lesefläche verbirgt ihren Überlauf und fängt
+  vertikale Touch-Gesten ab. Ein Wisch ab 48 px ruft einen einzelnen Seitensprung
+  aus; die Seitentasten verwenden denselben Sprung. Auf dem SM-T220 geprüft:
+  Seite 1 von 42 per Wisch zu Seite 2 von 42, danach per Taste zu Seite 3 von 42.
+  APK installiert sowie Windows-EXE, ZIP und Installer erneut erstellt; alle
+  zugehörigen Prüfsummen und der ZIP-Archivtest sind gültig.
+- Touch-Steuerung gegen verbleibendes WebView-Scrollen verschärft: Touchstart und
+  -bewegung werden in der Capture-Phase abgefangen, nativer Überlauf bleibt
+  verborgen und die Seitensprünge erfolgen ohne Smooth-Scrollanimation. Auf dem
+  SM-T220 nach APK-Update per Wisch direkt zu Seite 4 von 42 geprüft. Windows-EXE,
+  ZIP und Installer erneut synchronisiert; Prüfsummen und ZIP-Archivtest gültig.
+- Lesebereich gegen Kopf- und Fußleiste geschützt: Beide Leisten sind opak; ein
+  36-px-Sicherheitsbereich blendet angeschnittenen Text aus. Die Seitenschritte
+  überlappen um diesen Bereich, damit kein Text zwischen Seiten verloren geht.
+  Auf dem SM-T220 nach APK-Update geprüft: vollständige Leisten, Text nur im
+  geschützten Innenbereich und Seitennavigation weiterhin sichtbar.
+- Seitenwisch auf horizontal geändert: Links/rechts-Gesten ab 48 px wechseln eine
+  Seite; vertikale Bewegungen lösen keinen Seitenwechsel aus. APK gebaut und auf
+  dem SM-T220 installiert. `cargo fmt --check`, 7 Tests und Clippy bestanden.
+- Der vom Benutzer auf dem Tablet gespeicherte Screenshot wurde ausschließlich
+  gelesen. Er zeigte, dass die unterste Textzeile noch in den Navigationsbereich
+  hineinragte. Die Seitengrenzen werden deshalb nun aus den tatsächlichen
+  Textzeilen des gerenderten Kapitels berechnet: Jede neue Seite beginnt mit der
+  ersten zuvor nicht vollständig sichtbaren Zeile. Die Kopf- und
+  Navigationsschatten (je 36 px) bleiben dabei ausgespart. Horizontale Gesten
+  lösen dieselbe Seitennavigation wie die Tasten aus; vertikale Gesten bleiben
+  ohne Wirkung. Die daraus gebaute ARM64-APK wurde per `adb install -r` auf dem
+  SM-T220 installiert. Bestanden: `cargo fmt --check`, `cargo test` (7 Tests)
+  und `cargo clippy --all-targets -- -D warnings`. Die konkrete Darstellung nach
+  diesem Update steht noch für die Sichtprüfung auf dem Gerät aus; beim
+  abschließenden Geräte-Screenshot war das Tablet gesperrt.
+- Der anschließende entsperrte Test zeigte einen Zählerfehler und unvollständiges
+  Zeichnen des Android-WebView bei der experimentellen Zeilenvermessung. Diese
+  Variante wurde verworfen. Die stabile Seitenermittlung per Viewporthöhe ist
+  wiederhergestellt; Kopf- und Seitennavigation überdecken jetzt jeweils 56 px
+  (statt 36 px), also mehr als eine Textzeile. Dadurch bleibt am Rand kein
+  angeschnittener Text sichtbar. Die korrigierte ARM64-APK wurde erfolgreich mit
+  `adb install -r` auf dem SM-T220 aktualisiert. `cargo fmt --check`, `cargo test`
+  (7 Tests) und `cargo clippy --all-targets -- -D warnings` bestanden.
+- Nach einem weiteren Screenshot wurde die eigentliche Überlagerung bestätigt:
+  Die CSS-Schatten der Kopf- und Seitennavigationsleiste lagen über dem Text.
+  Beide Schatten wurden entfernt; der Lesebereich ist jetzt ausschließlich der
+  Flex-Bereich zwischen den Leisten und wird von ihnen nicht überdeckt. Die
+  korrigierte APK wurde erneut erfolgreich per `adb install -r` auf dem SM-T220
+  installiert. Formatprüfung, 7 Tests und Clippy mit `-D warnings` bestanden.
+- Der danach vom Benutzer gespeicherte Screenshot zeigte weiterhin eine halbe
+  Zeile direkt vor den Seitentasten. Seitensprünge rasten deshalb nach dem
+  Sprung mit einer lokalen Caret-/Zeilenprüfung an beiden sichtbaren Rändern
+  ein; es wird dabei nicht mehr das ganze Kapitel vermessen. APK aktualisiert
+  und auf dem SM-T220 nach Neustart geprüft: Seite 2 von 49 zeigt oben und unten
+  ausschließlich vollständige Textzeilen. Formatprüfung, 7 Tests und Clippy mit
+  `-D warnings` bestanden.
+- Frische Windows-x64-EXE, portables ZIP und NSIS-Installer aus dem aktuellen
+  Stand gebaut. Der Installer liegt unter `dist/Leaf-Setup-x64.exe`; seine
+  SHA-256-Prüfsumme wurde mit `sha256sum -c` bestätigt. Beim Cross-Link traten
+  ausschließlich die bekannten LNK4099-Hinweise zu fehlenden Microsoft-PDBs auf.
+  Ein Windows-Laufzeittest wurde nicht durchgeführt.
