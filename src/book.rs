@@ -8,12 +8,17 @@ use std::{
 pub struct Chapter {
     pub title: String,
     pub html: String,
+    #[serde(default)]
+    pub href: String,
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Book {
     pub title: String,
     pub author: String,
     pub chapters: Vec<Chapter>,
+    /// Originalarchiv für die originalgetreue, offline arbeitende epub.js-Rendition.
+    #[serde(default)]
+    pub epub: Option<String>,
 }
 
 fn entry(zip: &mut zip::ZipArchive<Cursor<&[u8]>>, path: &str) -> Result<String, String> {
@@ -62,6 +67,10 @@ pub fn parse(bytes: &[u8]) -> Result<Book, String> {
         title: metadata("title"),
         author: metadata("creator"),
         chapters: vec![],
+        epub: Some(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            bytes,
+        )),
     };
     if book.title.is_empty() {
         book.title = "Unbenanntes Buch".into();
@@ -103,7 +112,11 @@ pub fn parse(bytes: &[u8]) -> Result<Book, String> {
             .rm_tags(&["img", "a", "style"])
             .clean(&source)
             .to_string();
-        book.chapters.push(Chapter { title, html });
+        book.chapters.push(Chapter {
+            title,
+            html,
+            href: (*href).to_owned(),
+        });
     }
     if book.chapters.is_empty() {
         return Err("Dieses EPUB enthält keine lesbaren Kapitel.".into());
@@ -112,9 +125,9 @@ pub fn parse(bytes: &[u8]) -> Result<Book, String> {
 }
 
 pub fn demo() -> Book {
-    Book { title: "Ein neuer Anfang".into(), author: "Willkommen bei Leaf".into(), chapters: vec![
-        Chapter { title: "Die Kunst der kleinen Pause".into(), html: "<p>Es gibt diese stillen Momente, in denen die Welt für einen Augenblick langsamer wird. Der Tee dampft noch, das Licht fällt weich durch das Fenster, und vor uns liegt eine Geschichte, die darauf wartet, entdeckt zu werden.</p><p>Ein Buch aufzuschlagen bedeutet, eine Tür zu öffnen. Wir wissen noch nicht, wohin sie führt. Vielleicht in eine fremde Stadt, vielleicht in eine längst vergangene Zeit. Manchmal führt sie uns einfach ein Stück näher zu uns selbst.</p><h2>Raum für Geschichten</h2><p>Leaf ist dein Platz für solche Momente. Ohne Eile. Ohne Ablenkung. Nur du und die nächste Seite.</p><p>Öffne ein eigenes EPUB über die Schaltfläche links. Deine Kapitel erscheinen im Inhaltsverzeichnis. Schriftgröße und Farbschema kannst du jederzeit anpassen.</p><blockquote>Man muss nicht weit reisen, um neue Welten zu entdecken. Manchmal genügt eine einzige Seite.</blockquote><p>Mach es dir bequem. Die Geschichte beginnt hier.</p>".into() },
-        Chapter { title: "Dein nächstes Kapitel".into(), html: "<p>Jede Geschichte beginnt mit Neugier. Welche möchtest du heute entdecken?</p><p>Importiere ein DRM-freies EPUB, um loszulesen. Leaf merkt sich dein zuletzt geöffnetes Buch und Kapitel auf diesem Gerät, sofern ausreichend lokaler Speicher verfügbar ist.</p><h2>Lesen in deinem Rhythmus</h2><p>Nutze das Inhaltsverzeichnis oder die Pfeile unter dem Text, um zwischen Kapiteln zu wechseln. Wähle einen dunklen Hintergrund für den Abend oder warmes Papier für den Tag.</p>".into() }
+    Book { title: "Ein neuer Anfang".into(), author: "Willkommen bei Leaf".into(), epub: None, chapters: vec![
+        Chapter { title: "Die Kunst der kleinen Pause".into(), href: String::new(), html: "<p>Es gibt diese stillen Momente, in denen die Welt für einen Augenblick langsamer wird. Der Tee dampft noch, das Licht fällt weich durch das Fenster, und vor uns liegt eine Geschichte, die darauf wartet, entdeckt zu werden.</p><p>Ein Buch aufzuschlagen bedeutet, eine Tür zu öffnen. Wir wissen noch nicht, wohin sie führt. Vielleicht in eine fremde Stadt, vielleicht in eine längst vergangene Zeit. Manchmal führt sie uns einfach ein Stück näher zu uns selbst.</p><h2>Raum für Geschichten</h2><p>Leaf ist dein Platz für solche Momente. Ohne Eile. Ohne Ablenkung. Nur du und die nächste Seite.</p><p>Öffne ein eigenes EPUB über die Schaltfläche links. Deine Kapitel erscheinen im Inhaltsverzeichnis. Schriftgröße und Farbschema kannst du jederzeit anpassen.</p><blockquote>Man muss nicht weit reisen, um neue Welten zu entdecken. Manchmal genügt eine einzige Seite.</blockquote><p>Mach es dir bequem. Die Geschichte beginnt hier.</p>".into() },
+        Chapter { title: "Dein nächstes Kapitel".into(), href: String::new(), html: "<p>Jede Geschichte beginnt mit Neugier. Welche möchtest du heute entdecken?</p><p>Importiere ein DRM-freies EPUB, um loszulesen. Leaf merkt sich dein zuletzt geöffnetes Buch und Kapitel auf diesem Gerät, sofern ausreichend lokaler Speicher verfügbar ist.</p><h2>Lesen in deinem Rhythmus</h2><p>Nutze das Inhaltsverzeichnis oder die Pfeile unter dem Text, um zwischen Kapiteln zu wechseln. Wähle einen dunklen Hintergrund für den Abend oder warmes Papier für den Tag.</p>".into() }
     ] }
 }
 
@@ -153,6 +166,8 @@ mod tests {
         let b = parse(&epub()).unwrap();
         assert_eq!(b.title, "Testbuch");
         assert_eq!(b.chapters[0].title, "Erstes");
+        assert_eq!(b.chapters[0].href, "a.xhtml");
+        assert!(b.epub.is_some());
         assert_eq!(b.chapters[1].title, "Zweites");
         assert!(!b.chapters[0].html.contains("script"));
         assert!(!b.chapters[0].html.contains("onclick"));

@@ -2800,6 +2800,7 @@ name = "leaf"
 version = "0.1.0"
 dependencies = [
  "ammonia",
+ "base64",
  "dioxus",
  "directories",
  "jni 0.21.1",

@@ -15,15 +15,17 @@ Windows-x64-EXE und einen Windows-Installer mit bedarfsgerechter Installation vo
 WebView2 erweitert. Desktop ist das Standard-Cargo-Feature; Web bleibt optional.
 Die Oberfläche und das Beispielbuch sind deutsch. Bücher werden lokal verarbeitet.
 
-Aktueller Auftrag: Windows-Installer erstellen sowie die fertigen Änderungen
-committen und pushen.
-Zu Beginn waren Änderungen an der Übergabedatei, der Oberfläche und dem Rust-Code
-vorhanden. Kein Commit oder Push für diese Sitzung beauftragt.
+Aktueller Auftrag: Projektstatus ermitteln und das Navigations- und Anzeigeproblem
+mit epub.js lösen. Zu Beginn war der Arbeitsbaum sauber. Kein Commit oder Push für
+diese Sitzung beauftragt.
 
 ## Implementiert
 
-- EPUB-Import: ZIP-Container, OPF-Metadaten und Spine-Reihenfolge.
-- HTML-Bereinigung mit Ammonia; Skripte, Bilder, Links und Buch-CSS entfernt.
+- EPUB-Import: ZIP-Container, OPF-Metadaten und Spine-Reihenfolge; neue Importe
+  behalten zusätzlich das Originalarchiv für epub.js.
+- Neue Importe werden mit Buch-CSS, Bildern, internen Links und EPUB-Navigation
+  isoliert durch epub.js dargestellt. Die Ammonia-bereinigte Textansicht bleibt als
+  Kompatibilitätsweg für das Beispielbuch und alte Speicherstände erhalten.
 - Kapitelliste, Vor/Zurück, Schriftgröße 16–28 px, Hell-/Dunkelmodus.
 - Responsive Oberfläche und eingebautes Beispielbuch.
 - Buchübersicht als Listenansicht mit lokal erzeugten Coverkarten aus Titel und
@@ -125,16 +127,12 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
 1. Zuerst Windows testen: frisches Benutzerkonto ohne WebView2, vorhandene Runtime,
    fehlendes Netzwerk, blockierte Installation, `/S`, Update bei geschlossener und
    laufender App, Deinstallation und Erhalt der Lesedaten.
-2. EPUB-Kompatibilität mit realen EPUB-2-/EPUB-3-Dateien prüfen. Der Parser hängt
-   Manifest-Hrefs derzeit direkt an den OPF-Basispfad; URI-Decoding, Fragmente und
-   relative `..`-Segmente sind noch nicht umfassend behandelt. Navigation kommt
-   aus Kapitelüberschriften, nicht aus EPUB-NAV/NCX.
-3. Textorientierter MVP: keine Bilder, PDF, DRM, eingebetteten Buchstile,
-   internen Links, Suche, Lesezeichen oder Mehrbuch-Bibliothek.
-4. Die Seitennummer wird gespeichert; Größen-/Schriftänderungen können die exakte
-   sichtbare Textstelle verschieben, weil Seiten dynamisch aus dem Layout entstehen.
-   Bei jedem Speichern wird derzeit das gesamte
-   Buch serialisiert; bei großen Büchern ist die Scrollleistung noch zu prüfen.
+2. epub.js-Rendition mit realen EPUB-2-/EPUB-3-Dateien auf Desktop, Android und
+   Windows interaktiv prüfen: NAV/NCX, verschachtelte Einträge, Bilder, Buch-CSS,
+   interne Links, sehr große Kapitel, Drehung und geänderte Schriftgröße.
+3. PDF, DRM, Suche und Lesezeichen werden nicht unterstützt.
+4. Bei jedem Speichern wird derzeit das gesamte Buch einschließlich des Base64-
+   kodierten Originalarchivs serialisiert; bei großen Büchern ist die Leistung zu prüfen.
    Web-Speicher ist begrenzt. Parser-Limits: 30 MiB Eingabedatei, 8 MiB pro Textelement,
    40 MiB gesamte Kapitelquellen. Die Dateiauswahl liest zunächst die Datei,
    bevor der Parser die Eingabegröße prüft.
@@ -190,6 +188,31 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
    nachtragen. Commit/Push nur entsprechend dem jeweils autorisierten Auftrag.
 
 ## Umsetzung und Prüfungen am 9. September 2026
+
+- Frische Android-ARM64-Test-APK mit der epub.js-Integration über
+  `packaging/build-android.sh` erfolgreich erstellt: 15 MiB,
+  SHA-256 `c8949743927df97663bf3e367f75926140d911ea128273868501271fdf6abeb8`.
+  Die Prüfsummendatei wurde erfolgreich verifiziert. Das per USB erkannte Tablet
+  `R9JRB01BT5M` meldete jedoch wiederholt `unauthorized`; die Installation wurde
+  deshalb noch nicht ausgeführt und wartet auf Bestätigung des RSA-Dialogs am Gerät.
+- Navigations- und Anzeigeproblem grundlegend auf epub.js 0.3.93 umgestellt.
+  Neue EPUB-Importe speichern das Originalarchiv und werden offline durch eine echte,
+  paginierte epub.js-Rendition angezeigt. Seitenwechsel verwenden `next`/`prev`,
+  Kapitelaktionen EPUB-Hrefs und der gespeicherte Lesestand eine EPUB-CFI statt einer
+  fragilen Pixelposition. epub.js liefert EPUB-NAV/NCX und die aktuelle Spine-Position
+  an die Dioxus-Oberfläche zurück. Bilder, Buch-CSS und interne Links bleiben erhalten.
+  Das Beispielbuch und ältere gespeicherte Bücher ohne Originalarchiv verwenden als
+  kompatiblen Rückfall weiterhin die bisherige bereinigte Textansicht.
+- epub.js und JSZip sind fest versioniert, lokal eingebettet und benötigen zur Laufzeit
+  kein CDN. Original-Lizenztexte liegen unter `third-party/`; Bundle-Prüfsummen:
+  epub.js `06eae15745107b4aa508c95538275251f69bfb9f1175621fc458d9f42ed082d4`,
+  JSZip `acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e`.
+- Bestanden: `cargo fmt --check`, `cargo test` (7 Tests),
+  `cargo clippy --all-targets -- -D warnings`, WebAssembly-Check, JavaScript-Syntaxcheck
+  aller drei Bundles und Dioxus-Web-Release-Build. Der bekannte wasm-opt-DWARF-Fehler
+  erschien erneut; Dioxus erstellte die Client-Ausgabe erfolgreich. Noch nicht erfolgt:
+  interaktiver Laufzeittest der neuen Rendition mit realen EPUBs auf Desktop/Android/
+  Windows; neue Plattformartefakte wurden nicht gebaut.
 
 - Projektüberblick, `README.md`, Git-Status und vorhandene Build-Skripte geprüft;
   Arbeitsbaum war und ist bis auf diese Übergabedatei sauber.
@@ -309,3 +332,38 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
   SHA-256-Prüfsumme wurde mit `sha256sum -c` bestätigt. Beim Cross-Link traten
   ausschließlich die bekannten LNK4099-Hinweise zu fehlenden Microsoft-PDBs auf.
   Ein Windows-Laufzeittest wurde nicht durchgeführt.
+- Die aktuelle Android-APK wurde erneut gebaut und ihre SHA-256-Prüfsumme
+  bestätigt. Das Update auf dem SM-T220 scheiterte zunächst erwartungsgemäß an
+  einem anderen, zuvor verwendeten Debug-Signaturschlüssel. Nach ausdrücklicher
+  Bestätigung wurden die alte App samt ihren lokalen Daten deinstalliert und die
+  neue, mit dem aktuellen Schlüssel signierte APK erfolgreich installiert.
+  Paket, VersionCode 1, minSdk 24, targetSdk 34 und APK-Signaturversion 2 sind
+  per ADB bestätigt.
+- Korrektur für horizontales Wischen in importierten EPUBs: Der bisherige
+  Touch-Handler galt nur für die Text-Kompatibilitätsansicht. Jede von epub.js
+  geladene Iframe-Buchseite erhält nun einen eigenen Handler; Wischgesten ab
+  48 px mit überwiegend horizontaler Bewegung rufen `next` beziehungsweise
+  `prev` auf. JavaScript-Syntaxprüfung, Formatprüfung, 7 Rust-Tests und Clippy
+  mit `-D warnings` bestanden. Die neue APK-Prüfsumme ist gültig, die APK wurde
+  auf dem SM-T220 als Update installiert und gestartet. Die interaktive
+  Bestätigung der Geste auf dem Gerät steht noch aus.
+- Schriftwahl ergänzt: In der Kopfzeile stehen pro Buch die Familien Serif,
+  Sans und Mono zur Verfügung. Die Auswahl wird zusammen mit dem Lesestand
+  gespeichert, in beiden Lesewegen angewandt und ältere Zustände ohne dieses
+  Feld verwenden weiter Serif. Die aktuelle ARM64-APK wurde gebaut, ihre
+  Prüfsumme bestätigt und auf dem SM-T220 als Update installiert und gestartet.
+  Bestanden: Formatprüfung, JavaScript-Syntaxprüfung, 7 Rust-Tests und Clippy
+  mit `-D warnings`. Die visuelle Prüfung aller drei Familien auf dem Gerät
+  steht noch aus.
+- Einheitliches Buch-Icon ergänzt: Aus einer neu erzeugten, moosgrünen
+  Hardcover-Grafik wurden `assets/leaf-icon.png` (512 px), ein mehrgrößiges
+  `assets/leaf-icon.ico` für Windows und fünf Android-Dichtevarianten erzeugt.
+  Der Linux-Installer registriert das PNG als `leaf-icon`; Windows kompiliert
+  das ICO beim Cross-Build per `llvm-rc` als EXE-Ressource. Da Dioxus 0.7 seine
+  Android-Launcher-Icons nicht aus `bundle.icon` übernimmt, ersetzt
+  `build-android.sh` die generierten Ressourcen und führt danach Gradle erneut
+  aus. Der Android-Build, Shell-Syntaxprüfung, Formatprüfung und 7 Rust-Tests
+  bestanden; die APK-Prüfsumme wurde bestätigt und auf dem SM-T220 als Update
+  installiert. Die entpackte 192-px-APK-Ressource stimmt bytegenau mit der
+  Projektdatei überein. Windows konnte hier nicht neu gebaut werden, weil das
+  MSVC-Rust-Target und cargo-xwin nicht mehr lokal vorhanden sind.

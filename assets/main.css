@@ -208,6 +208,16 @@ header {
 .font-size {
   font-size:10px;
   color:var(--muted)}
+.font-family {
+  max-width:72px;
+  height:28px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  padding:0 5px;
+  background:var(--paper);
+  color:var(--ink);
+  font:inherit;
+  font-size:10px}
 .divider {
   height:18px;
   width:1px;
@@ -225,6 +235,16 @@ header {
   scrollbar-width:none}
 .reading-scroll::-webkit-scrollbar {
   display:none}
+.epub-viewer {
+  min-width:0;
+  min-height:0;
+  flex:1;
+  overflow:hidden;
+  background:var(--paper)}
+.epub-viewer iframe {
+  border:0 !important}
+.epub-error {
+  margin:12px 24px}
 article {
   max-width:720px;
   padding:48px 36px;
@@ -243,7 +263,7 @@ article {
   width:25px;
   background:var(--accent)}
 h1 {
-  font:normal clamp(32px,3.2vw,46px)/1.2 Georgia,serif;
+  font:normal clamp(32px,3.2vw,46px)/1.2 var(--reading-font, Georgia, serif);
   letter-spacing:-1.2px;
   margin:24px 0;
   color:var(--ink)}
@@ -252,7 +272,7 @@ h1 {
   font-size:23px;
   margin:28px 0}
 .prose {
-  font:var(--reading-size)/1.9 Georgia,"Times New Roman",serif;
+  font:var(--reading-size)/1.9 var(--reading-font, Georgia, "Times New Roman", serif);
   overflow-wrap:anywhere}
 .prose p {
   margin:0 0 1.35em}

@@ -9,6 +9,7 @@ title = "Leaf · Dein E-Book-Reader"
 identifier = "de.leaf.reader"
 publisher = "Leaf"
 short_description = "Ein ruhiger EPUB-Reader"
+icon = ["assets/leaf-icon.png", "assets/leaf-icon.ico"]
 category = "Education"
 
 [android]

@@ -17,6 +17,10 @@ struct Reading {
     dark: bool,
     #[serde(default)]
     scroll_top: f64,
+    #[serde(default)]
+    cfi: String,
+    #[serde(default = "default_font_value")]
+    font: String,
 }
 impl Default for Reading {
     fn default() -> Self {
@@ -27,7 +31,33 @@ impl Default for Reading {
             size: 20,
             dark: false,
             scroll_top: 0.0,
+            cfi: String::new(),
+            font: default_font().into(),
         }
+    }
+}
+
+fn default_font() -> &'static str {
+    "serif"
+}
+
+fn default_font_value() -> String {
+    default_font().into()
+}
+
+fn normalized_font(font: &str) -> &'static str {
+    match font {
+        "sans" => "sans",
+        "mono" => "mono",
+        _ => default_font(),
+    }
+}
+
+fn font_family(font: &str) -> &'static str {
+    match normalized_font(font) {
+        "sans" => "Arial, Helvetica, sans-serif",
+        "mono" => "'Courier New', monospace",
+        _ => "Georgia, 'Times New Roman', serif",
     }
 }
 #[derive(Clone, Serialize, Deserialize)]
@@ -83,6 +113,7 @@ fn decode_library(value: &str) -> Option<Library> {
         state.chapter = state.chapter.min(state.book.chapters.len() - 1);
         state.size = state.size.clamp(16, 28);
         state.scroll_top = state.scroll_top.max(0.0);
+        state.font = normalized_font(&state.font).into();
     }
     Some(library)
 }
@@ -91,6 +122,52 @@ fn decode_library(value: &str) -> Option<Library> {
 struct PageMetrics {
     count: usize,
     page: usize,
+}
+
+#[derive(Deserialize)]
+struct EpubMetrics {
+    #[serde(default)]
+    cfi: String,
+    #[serde(default)]
+    href: String,
+    #[serde(default)]
+    chapter: usize,
+    #[serde(default)]
+    page: usize,
+    #[serde(default = "one")]
+    pages: usize,
+    #[serde(default)]
+    at_start: bool,
+    #[serde(default)]
+    at_end: bool,
+    #[serde(default)]
+    error: String,
+    #[serde(default)]
+    toc: Vec<EpubToc>,
+}
+
+#[derive(Deserialize)]
+struct EpubToc {
+    label: String,
+    href: String,
+}
+
+fn one() -> usize {
+    1
+}
+
+fn epub_action(action: &str) {
+    let action = action.to_owned();
+    spawn(async move {
+        let _ = document::eval(&format!("window.leafEpub?.{}();", action)).await;
+    });
+}
+
+fn epub_display(href: &str) {
+    let target = serde_json::to_string(href).unwrap_or_else(|_| "null".into());
+    spawn(async move {
+        let _ = document::eval(&format!("window.leafEpub?.display({target});")).await;
+    });
 }
 
 const PAGE_SAFE_INSET: f64 = 56.0;
@@ -339,9 +416,13 @@ mod storage_tests {
         let mut value = serde_json::to_value(Reading::default()).unwrap();
         value.as_object_mut().unwrap().remove("scroll_top");
         value.as_object_mut().unwrap().remove("page");
+        value.as_object_mut().unwrap().remove("cfi");
+        value.as_object_mut().unwrap().remove("font");
         let restored: Reading = serde_json::from_value(value).unwrap();
         assert_eq!(restored.scroll_top, 0.0);
         assert_eq!(restored.page, 0);
+        assert!(restored.cfi.is_empty());
+        assert_eq!(restored.font, "serif");
     }
 
     #[test]
@@ -450,13 +531,34 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
     let mut reading = use_signal(move || library.peek().books[index].clone());
     let mut menu = use_signal(|| false);
     let mut page_count = use_signal(|| 1usize);
+    let mut epub_at_start = use_signal(|| true);
+    let mut epub_at_end = use_signal(|| false);
+    let mut epub_error = use_signal(String::new);
     use_effect(move || {
         library.write().books[index] = reading.read().clone();
+    });
+    let appearance = use_memo(move || {
+        let state = reading.read();
+        (state.size, state.dark, state.font.clone())
+    });
+    use_effect(move || {
+        let (size, dark, font) = appearance();
+        let font = serde_json::to_string(&font).unwrap_or_else(|_| "\"serif\"".into());
+        spawn(async move {
+            let _ = document::eval(&format!(
+                "window.leafEpub?.appearance({size}, {}, {font});",
+                if dark { "true" } else { "false" },
+            ))
+            .await;
+        });
     });
     let mut reader_mounted = use_signal(|| false);
     let mut position_ready = use_signal(|| false);
     let location = use_memo(move || (reading.read().chapter, reading.read().size));
     use_effect(move || {
+        if reading.peek().book.epub.is_some() {
+            return;
+        }
         if !reader_mounted() {
             return;
         }
@@ -508,7 +610,15 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                 div { class: "section-label contents-label", "INHALT" span { "{count} Kapitel" } }
                 nav { aria_label: "Inhaltsverzeichnis",
                     for (index, ch) in state.book.chapters.iter().enumerate() {
-                        button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| { let mut r = reading.write(); if r.chapter != index { r.chapter = index; r.page = 0; r.scroll_top = 0.0; } menu.set(false); },
+                        button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| {
+                            if reading.peek().book.epub.is_some() {
+                                epub_display(&reading.peek().book.chapters[index].href);
+                            } else {
+                                let mut r = reading.write();
+                                if r.chapter != index { r.chapter = index; r.page = 0; r.scroll_top = 0.0; }
+                            }
+                            menu.set(false);
+                        },
                             span { class: "chapter-number", "{index + 1:02}" } span { "{ch.title}" }
                         }
                     }
@@ -519,6 +629,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                 header {
                     button { class: "mobile-menu icon-button", aria_label: "Inhaltsverzeichnis umschalten", onclick: move |_| menu.toggle(), "☰" }
                     button { class: "close-book", onclick: move |_| {
+                        if reading.peek().book.epub.is_some() { epub_action("destroy"); }
                         let mut state = library.write();
                         state.books[index] = reading.peek().clone();
                         state.active = None;
@@ -527,10 +638,63 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         button { class: "icon-button", aria_label: "Schrift verkleinern", disabled: state.size <= 16, onclick: move |_| { reading.write().size -= 2; }, "A−" }
                         span { class: "font-size", "{state.size}" }
                         button { class: "icon-button", aria_label: "Schrift vergrößern", disabled: state.size >= 28, onclick: move |_| { reading.write().size += 2; }, "A+" }
+                        select { class: "font-family", aria_label: "Schriftart", value: "{state.font}", onchange: move |event| reading.write().font = normalized_font(&event.value()).into(),
+                            option { value: "serif", "Serif" }
+                            option { value: "sans", "Sans" }
+                            option { value: "mono", "Mono" }
+                        }
                         span { class: "divider" }
                         button { class: "icon-button", aria_label: "Farbschema wechseln", onclick: move |_| { let dark = reading.read().dark; reading.write().dark = !dark; }, if state.dark { "☀" } else { "☾" } }
                     }
                 }
+                if let Some(epub_data) = state.book.epub.clone() {
+                    div { class: "epub-viewer", id: "epub-viewer",
+                        onmounted: move |_| {
+                            let config = serde_json::json!({
+                                "data": epub_data,
+                                "cfi": reading.peek().cfi,
+                                "size": reading.peek().size,
+                                "dark": reading.peek().dark,
+                                "font": reading.peek().font,
+                            });
+                            spawn(async move {
+                                let script = format!(
+                                    "{}\n{}\n{}\nleafEpubOpen({});",
+                                    include_str!("../assets/jszip.min.js"),
+                                    include_str!("../assets/epub.min.js"),
+                                    include_str!("../assets/epub-reader.js"),
+                                    config
+                                );
+                                let mut evaluator = document::eval(&script);
+                                while let Ok(metrics) = evaluator.recv::<EpubMetrics>().await {
+                                    if !metrics.error.is_empty() {
+                                        epub_error.set(format!("EPUB-Anzeige fehlgeschlagen: {}", metrics.error));
+                                        continue;
+                                    }
+                                    if !metrics.toc.is_empty() {
+                                        reading.write().book.chapters = metrics.toc.into_iter().map(|item| book::Chapter {
+                                            title: item.label,
+                                            href: item.href,
+                                            html: String::new(),
+                                        }).collect();
+                                        continue;
+                                    }
+                                    let mut current = reading.write();
+                                    current.cfi = metrics.cfi;
+                                    let location_path = metrics.href.split('#').next().unwrap_or("");
+                                    current.chapter = current.book.chapters.iter().position(|chapter| {
+                                        chapter.href.split('#').next().unwrap_or("") == location_path
+                                    }).unwrap_or(metrics.chapter).min(current.book.chapters.len() - 1);
+                                    current.page = metrics.page;
+                                    page_count.set(metrics.pages);
+                                    epub_at_start.set(metrics.at_start);
+                                    epub_at_end.set(metrics.at_end);
+                                }
+                            });
+                        }
+                    }
+                    if !epub_error().is_empty() { p { class: "epub-error notice", role: "alert", "{epub_error}" } }
+                } else {
                 div { class: "reading-scroll", tabindex: "0", "data-position-ready": "{position_ready}",
                     onmounted: move |_| {
                         reader_mounted.set(true);
@@ -552,7 +716,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         }
                     },
                     key: "{index}-{state.chapter}",
-                    article { style: "--reading-size: {state.size}px",
+                    article { style: "--reading-size: {state.size}px; --reading-font: {font_family(&state.font)}",
                         div { class: "eyebrow", span {} "KAPITEL {state.chapter + 1} VON {count}" }
                         h1 { "{chapter.title}" }
                         div { class: "ornament", "✳" }
@@ -566,10 +730,11 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                     }
                     footer { "Eine Seite nach der anderen." span { "Nimm dir Zeit." } }
                 }
+                }
                 div { class: "page-controls", aria_label: "Seitennavigation",
-                    button { disabled: state.page == 0, onclick: move |_| turn_page(-1), "← Seite" }
+                    button { disabled: if state.book.epub.is_some() { epub_at_start() } else { state.page == 0 }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("prev") } else { turn_page(-1) }, "← Seite" }
                     span { "Seite {state.page + 1} / {pages}" }
-                    button { disabled: state.page + 1 >= pages, onclick: move |_| turn_page(1), "Seite →" }
+                    button { disabled: if state.book.epub.is_some() { epub_at_end() } else { state.page + 1 >= pages }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("next") } else { turn_page(1) }, "Seite →" }
                 }
                 div { class: "progress-track", div { style: "width: {progress}%" } }
                 div { class: "bottom-bar", span { "{state.book.author}" } span { "Kapitel {state.chapter + 1} von {count}" } }

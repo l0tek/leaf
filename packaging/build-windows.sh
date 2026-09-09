@@ -5,6 +5,11 @@ cd "$project_dir"
 # Requires cargo-xwin, clang-cl, lld-link and the Rust Windows MSVC target.
 XWIN_ARCH=x86_64 RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
 export XWIN_ARCH RUSTFLAGS
+if [ -z "${LLVM_RC:-}" ] && [ -n "${ANDROID_NDK_HOME:-}" ] \
+    && [ -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-rc" ]; then
+    LLVM_RC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-rc"
+    export LLVM_RC
+fi
 cargo xwin build --locked --release --target x86_64-pc-windows-msvc
 mkdir -p dist/windows-x64
 cp target/x86_64-pc-windows-msvc/release/leaf.exe dist/windows-x64/Leaf.exe

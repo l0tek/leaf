@@ -111,6 +111,8 @@ cargo install cargo-xwin --locked
 ```
 
 Das Skript bindet die C-Laufzeit statisch ein und erstellt EXE, ZIP und SHA-256-Prüfsumme.
+Für das eingebettete Windows-Icon wird zusätzlich `llvm-rc` benötigt; bei gesetztem
+`ANDROID_NDK_HOME` verwendet das Skript automatisch dessen LLVM-Ressourcencompiler.
 [cargo-xwin](https://github.com/rust-cross/cargo-xwin) lädt dafür Microsoft CRT und Windows SDK in seinen lokalen Cache.
 
 ## Android-APK (ARM64)
@@ -140,19 +142,32 @@ App; eine Deinstallation entfernt diese Daten.
 
 Die Einrichtung folgt der [Dioxus-Mobile-Dokumentation](https://dioxuslabs.com/learn/0.7/guides/platforms/mobile/).
 Das Compile-SDK ist explizit auf 36 gesetzt, damit es zu den AndroidX-Abhängigkeiten passt.
+Android, der Linux-Anwendungsstarter und die Windows-EXE verwenden dasselbe
+Buch-Icon in jeweils passenden Bildgrößen.
 
 ## Funktionen und Speicherung
 
 - DRM-freie EPUB-Dateien lokal importieren (bis 30 MB)
-- Inhaltsverzeichnis aus den Dokumenten in EPUB-Spine-Reihenfolge
-- Seiten- und Kapitelnavigation, Schriftgröße und Hell-/Dunkelmodus
-- Letztes Buch, Kapitel, aktuelle Seite und Einstellungen automatisch lokal speichern
+- Inhaltsverzeichnis aus EPUB-NAV/NCX (mit Spine-Fallback bei älteren Beständen)
+- Paginierte Anzeige über das lokal eingebettete epub.js, einschließlich Buchbildern,
+  Buchstyles, internen Links, Seiten- und Kapitelnavigation
+- Schriftwahl (Serif, Sans oder Mono), letzte EPUB-CFI-Position, Kapitel, aktuelle
+  Seite und Einstellungen automatisch
+  lokal speichern
 - Responsive Leseansicht und deutsches Beispielbuch
 - Bereinigung importierter HTML-Inhalte; keine externen Buchressourcen
 
-Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. Freies Scrollen ist in der Leseansicht ausgeschaltet: Horizontale Wischgesten und die Seitentasten wechseln jeweils genau eine Seite. Seitengrenzen werden an gerenderten Textzeilen ausgerichtet, damit die Navigationsleiste keine halbe Zeile verdeckt. Die aktuelle Seite wird beim erneuten Öffnen wiederhergestellt. Ein Kapitelwechsel beginnt auf Seite 1. Da die Seiten dynamisch aus Fenstergröße und Schriftgröße entstehen, kann sich die exakte Textstelle nach einer Layoutänderung verschieben.
+Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. epub.js paginiert importierte Bücher in einer isolierten Buchansicht; Seitentasten, interne Links und Inhaltsverzeichnis verwenden die EPUB-eigenen Ziele. Die aktuelle Stelle wird als EPUB-CFI gespeichert und beim erneuten Öffnen wiederhergestellt. Das eingebaute Beispielbuch und ältere gespeicherte Importe ohne Originalarchiv verwenden weiterhin die bisherige Textansicht.
 
-Diese Version konzentriert sich auf Text: eingebettete Bilder, Verlags-Stylesheets, PDF, DRM und EPUB-interne Links werden nicht unterstützt. Das Inhaltsverzeichnis verwendet Kapitelüberschriften, nicht die separate EPUB-Navigationsdatei.
+PDF und DRM werden nicht unterstützt. Die Web-Version unterliegt weiterhin dem
+begrenzten Local Storage des Browsers; das Original-EPUB wird für die Offline-Anzeige
+zusammen mit dem Lesestand gespeichert.
+
+## Drittanbieter-Code
+
+Leaf bettet [epub.js 0.3.93](https://github.com/futurepress/epub.js) und
+[JSZip 3.10.1](https://github.com/Stuk/jszip) lokal ein. Dadurch benötigt die
+Leseansicht keine Internetverbindung. Die Lizenztexte liegen unter `third-party/`.
 
 ## Optionale Web-Version
 
