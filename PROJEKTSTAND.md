@@ -367,3 +367,72 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
   installiert. Die entpackte 192-px-APK-Ressource stimmt bytegenau mit der
   Projektdatei überein. Windows konnte hier nicht neu gebaut werden, weil das
   MSVC-Rust-Target und cargo-xwin nicht mehr lokal vorhanden sind.
+
+## Umsetzung und Prüfungen am 10. September 2026
+
+- Nach Aktualisierung auf Commit `079e61f` wurde die Windows-x64-EXE mit
+  `packaging/build-windows.sh` frisch erstellt, einschließlich portablem ZIP
+  und dessen Prüfsumme. Für den Cross-Build wurden das vorhandene
+  `x86_64-pc-windows-msvc`-Target, cargo-xwin sowie die Clang-/LLVM-Werkzeuge
+  des Android-NDK verwendet. Der Linker meldete nur die bekannten LNK4099-
+  Hinweise zu nicht verfügbaren Microsoft-PDB-Debugdateien; der Release-Build
+  war erfolgreich.
+- Der neue NSIS-Installer liegt unter `dist/Leaf-Setup-x64.exe`. NSIS und
+  osslsigncode wurden nur temporär außerhalb des Repositories bereitgestellt.
+  Das Build-Skript hat den eingebetteten Microsoft-WebView2-Bootstrapper gegen
+  die Microsoft-Root-Zertifikate geprüft. Die Installer-Prüfsumme wurde danach
+  mit `sha256sum -c dist/Leaf-Setup-x64.exe.sha256` bestätigt; `file` erkennt
+  ihn als NSIS-Windows-GUI-Installer. Kein Laufzeittest unter Windows wurde
+  durchgeführt.
+
+## Umsetzung und Prüfungen am 11. September 2026
+
+- Linux-Release-App mit `cargo build --locked --release` erfolgreich erstellt:
+  `target/release/leaf` ist eine x86-64-ELF-Datei (9,8 MiB).
+- Windows-x64-App mit `packaging/build-windows.sh` erfolgreich erstellt:
+  `dist/windows-x64/Leaf.exe` sowie `dist/Leaf-windows-x64.zip`. Die EXE-
+  Prüfsumme und der ZIP-Archivtest wurden bestätigt. Beim Cross-Link traten
+  ausschließlich die bekannten LNK4099-Hinweise zu fehlenden Microsoft-PDBs auf.
+- NSIS-Installer mit `packaging/build-installer.sh` erfolgreich erstellt:
+  `dist/Leaf-Setup-x64.exe` (3,6 MiB). Weil `osslsigncode` und NSIS nicht im
+  PATH lagen, wurden sie nur temporär unter `/tmp` aus den konfigurierten
+  Paketquellen entpackt. Der Build prüfte den Microsoft-WebView2-Bootstrapper;
+  die Installer-Prüfsumme wurde anschließend mit `sha256sum -c` bestätigt.
+  Kein Laufzeittest unter Windows wurde durchgeführt.
+- Korrektur der Text-Kompatibilitätsansicht: Seitensprung, Seitenzähler und
+  Wiederherstellung verwenden nun einheitlich die vollständige Höhe der
+  Lesefläche. Die frühere Reserve von 112 px und die nachträgliche
+  Zeilen-Ausrichtung erzeugten eine Überlappung, durch die ein Rest der
+  vorherigen Seite auf der nächsten angezeigt wurde. Die korrigierte
+  Windows-x64-EXE, das portable ZIP und der NSIS-Installer wurden frisch
+  erstellt; EXE- und Installer-Prüfsummen sowie der ZIP-Archivtest sind
+  erfolgreich. `cargo fmt --check`, `cargo test` (7 Tests) und Clippy mit
+  `-D warnings` bestanden. Kein Laufzeittest unter Windows wurde durchgeführt.
+- Die Linux-Release-App wurde nach der Korrektur mit
+  `cargo build --locked --release` neu erstellt. Eine frische Android-ARM64-APK
+  wurde mit `packaging/build-android.sh` unter dem vorhandenen JDK 17, SDK und
+  NDK erzeugt; ihre SHA-256-Prüfsumme ist gültig. Das über USB verbundene
+  Samsung Galaxy Tab A7 Lite SM-T220 (`R9JRB01BT5M`) war autorisiert. Die
+  Update-Installation per `adb install -r` wurde jedoch abgewiesen
+  (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), weil die auf dem Gerät vorhandene
+  App mit einem anderen Debug-Schlüssel signiert ist. Eine Deinstallation zur
+  Neuinstallation wurde nicht vorgenommen, da sie lokale Leaf-Daten löscht.
+- Nach ausdrücklicher Freigabe wurde `de.leaf.reader` auf dem SM-T220
+  deinstalliert; die lokalen Leaf-Daten wurden dabei entfernt. Die frische APK
+  wurde anschließend erfolgreich installiert und gestartet. Per ADB bestätigt:
+  VersionCode 1, minSdk 24 und targetSdk 34.
+- Der NSIS-Installer wurde anschließend erneut aus der korrigierten
+  Windows-x64-EXE erzeugt. `dist/Leaf-Setup-x64.exe` ist als Windows-GUI-
+  Installer erkannt, und seine SHA-256-Prüfsumme ist gültig. Ein Laufzeittest
+  unter Windows wurde nicht durchgeführt.
+- Ladebildschirm für die Leseansicht ergänzt: Er verdeckt die Oberfläche beim
+  Öffnen, bis die Textansicht ihr Layout aufgebaut hat oder epub.js die erste
+  Position meldet. Er wird auch bei Kapitelwechseln erneut gezeigt und
+  verhindert damit das kurzzeitige Anzeigen unformatierter Inhalte.
+  Formatprüfung, 7 Rust-Tests und Clippy mit `-D warnings` bestanden.
+- Frische Artefakte nach dieser Änderung: Linux-Release-App, Android-ARM64-APK,
+  Windows-x64-EXE, portables ZIP und NSIS-Installer. APK-, EXE- und
+  Installer-Prüfsummen sowie ZIP-Archivtest sind gültig. Die APK wurde mit
+  `adb install -r` auf dem verbundenen SM-T220 aktualisiert (Installationszeit
+  per ADB bestätigt). Die visuelle Prüfung des neuen Ladebildschirms auf den
+  Geräten sowie ein Windows-Laufzeittest stehen noch aus.

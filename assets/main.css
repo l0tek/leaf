@@ -26,6 +26,7 @@ button:focus-visible,a:focus-visible,label:focus-within {
   --line:#e4e5de;
   --accent:#526846;
   display:flex;
+  position:relative;
   height:100dvh;
   color:var(--ink);
   background:var(--paper)}
@@ -243,6 +244,25 @@ header {
   background:var(--paper)}
 .epub-viewer iframe {
   border:0 !important}
+.reader-loading {
+  position:absolute;
+  inset:0;
+  z-index:20;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:10px;
+  background:var(--paper);
+  color:var(--ink);
+  font-size:12px}
+.reader-loading-mark {
+  color:var(--accent);
+  font:48px/1 Georgia,serif}
+.reader-loading strong {
+  font:normal 24px/1.2 Georgia,serif}
+.reader-loading span {
+  color:var(--muted)}
 .epub-error {
   margin:12px 24px}
 article {

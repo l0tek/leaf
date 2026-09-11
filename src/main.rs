@@ -170,10 +170,8 @@ fn epub_display(href: &str) {
     });
 }
 
-const PAGE_SAFE_INSET: f64 = 56.0;
-
 fn page_height(viewport_height: f64) -> f64 {
-    (viewport_height - 2.0 * PAGE_SAFE_INSET).max(1.0)
+    viewport_height.max(1.0)
 }
 
 fn turn_page(delta: i32) {
@@ -193,37 +191,8 @@ fn install_page_gestures() {
             window.leafPageGestureCleanup?.();
             const reader = document.querySelector('.reading-scroll');
             if (reader) {
-                const lineAt = y => {
-                    const box = reader.getBoundingClientRect();
-                    for (const x of [box.left + 42, box.left + box.width / 2, box.right - 42]) {
-                        const caret = document.caretRangeFromPoint?.(x, y);
-                        if (!caret || caret.startContainer.nodeType !== Node.TEXT_NODE) continue;
-                        const text = caret.startContainer;
-                        if (!text.textContent.length) continue;
-                        const offset = Math.min(Math.max(0, caret.startOffset), text.textContent.length - 1);
-                        const range = document.createRange();
-                        range.setStart(text, offset);
-                        range.setEnd(text, offset + 1);
-                        const rect = range.getBoundingClientRect();
-                        if (rect.height > 0) return rect;
-                    }
-                    return null;
-                };
-                reader.__leafAlignPage = () => {
-                    let box = reader.getBoundingClientRect();
-                    const topLine = lineAt(box.top + 1);
-                    if (topLine && topLine.top < box.top) {
-                        reader.scrollBy({ top: topLine.bottom - box.top + 1, behavior: 'instant' });
-                    }
-                    box = reader.getBoundingClientRect();
-                    const bottomLine = lineAt(box.bottom - 1);
-                    if (bottomLine && bottomLine.top < box.bottom && bottomLine.bottom > box.bottom) {
-                        reader.scrollBy({ top: -(box.bottom - bottomLine.top + 1), behavior: 'instant' });
-                    }
-                };
                 reader.__leafTurnPage = delta => {
-                    reader.scrollBy({ top: delta * Math.max(1, reader.clientHeight - 112), behavior: 'instant' });
-                    reader.__leafAlignPage();
+                    reader.scrollBy({ top: delta * Math.max(1, reader.clientHeight), behavior: 'instant' });
                 };
                 let start_x = null;
                 const start = event => {
@@ -529,6 +498,7 @@ async fn pick_android_epub() -> Result<Option<Vec<u8>>, String> {
 #[component]
 fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> Element {
     let mut reading = use_signal(move || library.peek().books[index].clone());
+    let mut reader_ready = use_signal(|| false);
     let mut menu = use_signal(|| false);
     let mut page_count = use_signal(|| 1usize);
     let mut epub_at_start = use_signal(|| true);
@@ -564,6 +534,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
         }
         let expected = location();
         position_ready.set(false);
+        reader_ready.set(false);
         page_count.set(1);
         let saved_page = reading.peek().page;
         spawn(async move {
@@ -574,11 +545,10 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                     r#"
                     const reader = document.querySelector('.reading-scroll');
                     if (reader) {{
-                        const height = Math.max(1, reader.clientHeight - 112);
+                        const height = Math.max(1, reader.clientHeight);
                         const count = Math.max(1, Math.ceil(reader.scrollHeight / height));
                         const page = Math.min({saved_page}, count - 1);
                         reader.scrollTo({{left: 0, top: page * height, behavior: 'instant'}});
-                        reader.__leafAlignPage?.();
                         dioxus.send({{count, page}});
                     }}
                     "#
@@ -589,6 +559,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                     page_count.set(metrics.count);
                     reading.write().page = metrics.page;
                     position_ready.set(true);
+                    reader_ready.set(true);
                 }
             }
         });
@@ -612,6 +583,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                     for (index, ch) in state.book.chapters.iter().enumerate() {
                         button { class: if index == state.chapter { "chapter active" } else { "chapter" }, onclick: move |_| {
                             if reading.peek().book.epub.is_some() {
+                                reader_ready.set(false);
                                 epub_display(&reading.peek().book.chapters[index].href);
                             } else {
                                 let mut r = reading.write();
@@ -669,6 +641,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                                 while let Ok(metrics) = evaluator.recv::<EpubMetrics>().await {
                                     if !metrics.error.is_empty() {
                                         epub_error.set(format!("EPUB-Anzeige fehlgeschlagen: {}", metrics.error));
+                                        reader_ready.set(true);
                                         continue;
                                     }
                                     if !metrics.toc.is_empty() {
@@ -689,6 +662,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                                     page_count.set(metrics.pages);
                                     epub_at_start.set(metrics.at_start);
                                     epub_at_end.set(metrics.at_end);
+                                    reader_ready.set(true);
                                 }
                             });
                         }
@@ -738,6 +712,13 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                 }
                 div { class: "progress-track", div { style: "width: {progress}%" } }
                 div { class: "bottom-bar", span { "{state.book.author}" } span { "Kapitel {state.chapter + 1} von {count}" } }
+                if !reader_ready() {
+                    div { class: "reader-loading", role: "status", aria_label: "Leseansicht wird geladen",
+                        div { class: "reader-loading-mark", "◒" }
+                        strong { "Leaf wird geöffnet" }
+                        span { "Die Leseansicht wird vorbereitet …" }
+                    }
+                }
             }
         }
     }
