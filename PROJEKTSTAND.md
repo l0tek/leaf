@@ -1,6 +1,6 @@
 # Projektstand — Leaf
 
-Stand: 8. September 2026 · Version 0.1.0
+Stand: 24. September 2026 · Version 0.1.2
 Repository: https://github.com/l0tek/leaf
 
 Diese Datei ist der Einstieg für die nächste Arbeitssitzung. Sie dokumentiert den
@@ -103,7 +103,8 @@ Diese Dateien sind generiert und absichtlich nicht in Git. Auf einem frischen Cl
 - `dist/windows-x64/Leaf.exe` — Windows-App.
 - `dist/windows-x64/README.txt`, `SHA256SUMS.txt`.
 - `dist/Leaf-windows-x64.zip` — portable Windows-Ausgabe.
-- `dist/Leaf-Setup-x64.exe`, `dist/Leaf-Setup-x64.exe.sha256` — Windows-Setup.
+- `dist/Leaf-Setup-0.1.2-x64.exe`, `dist/Leaf-Setup-0.1.2-x64.exe.sha256` —
+  Windows-Setup.
 
 Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
 
@@ -436,3 +437,77 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
   `adb install -r` auf dem verbundenen SM-T220 aktualisiert (Installationszeit
   per ADB bestätigt). Die visuelle Prüfung des neuen Ladebildschirms auf den
   Geräten sowie ein Windows-Laufzeittest stehen noch aus.
+
+## Umsetzung und Prüfungen am 24. September 2026
+
+- EPUB-Seitenzählung auf Buchumfang umgestellt: epub.js paginiert nach dem
+  ersten Anzeigen alle Spine-Elemente mit der aktuellen Fenstergröße, summiert
+  deren Seiten und stellt danach die ursprüngliche CFI wieder her. Die Anzeige
+  `Seite x / y` und der Fortschrittsbalken verwenden damit die gesamte
+  Seitenzahl statt nur die des aktuellen Kapitels. Bei Schrift-, Farb- oder
+  Schriftfamilienwechsel wird die Paginierung verzögert erneut bestimmt.
+- Der Lesebereich ist innerhalb des Hauptbereichs abgeschnitten und der EPUB-
+  Viewer liegt explizit unter der Kopfzeile. Das verhindert, dass WebView2-
+  Inhalt beim Windows-Layout in die Kopfzeile hineinragt.
+- Bestanden: `cargo fmt --check`, `cargo test` (7 Tests),
+  `cargo clippy --all-targets -- -D warnings`, `git diff --check` und
+  `cargo build --locked --release`. Ein JavaScript-Syntaxcheck war nicht
+  möglich, weil weder Node.js noch eine andere JavaScript-Shell installiert
+  ist. Weder Windows-EXE/Installer noch ein Windows-Laufzeittest wurden in
+  dieser Änderung erzeugt beziehungsweise durchgeführt.
+- Frische Windows-x64-EXE, portables ZIP und NSIS-Installer aus diesem Stand
+  erzeugt: `dist/windows-x64/Leaf.exe`, `dist/Leaf-windows-x64.zip` und
+  `dist/Leaf-Setup-x64.exe`. EXE- und Installer-Prüfsummen sowie der ZIP-
+  Archivtest sind gültig; `file` erkennt die EXE als x64-GUI-PE und das Setup
+  als NSIS-GUI-Installer. Die beim MSVC-Cross-Link gemeldeten LNK4099-Hinweise
+  betreffen nur nicht verfügbare Microsoft-PDB-Dateien. Kein Windows-
+  Laufzeittest wurde durchgeführt.
+- `target/` und `dist/` auf Benutzerwunsch vollständig geleert und alle
+  Plattformausgaben frisch aufgebaut: Linux-Release-App,
+  `dist/Leaf-android-arm64.apk`, Windows-x64-EXE, portables Windows-ZIP und
+  NSIS-Installer. Die Android-Erstellung brach zunächst wegen eines ungültigen
+  geerbten `JAVA_HOME` ab; mit dem vorhandenen Temurin-JDK 17 lief sie
+  erfolgreich durch. APK-, EXE- und Installer-Prüfsummen sowie beide
+  Archivtests sind gültig. Kein Laufzeittest auf Android, Linux oder Windows
+  wurde in diesem Neuaufbau ausgeführt.
+- Korrektur für die Gesamtseitenzahl im Windows-WebView2: Während epub.js die
+  Spine-Elemente vermisst, wird die jeweils letzte asynchron gemeldete
+  Position gespeichert. Nach der Wiederherstellung der CFI wird daraus die
+  aufsummierte Gesamtseitenzahl an Dioxus gemeldet. Zusätzlich wartet die
+  Vermessung pro Abschnitt einen Animationsframe, damit WebView2 den aktuellen
+  `displayed.total`-Wert statt den des vorherigen Abschnitts liefert. Frische
+  Windows-x64-EXE, ZIP und Setup wurden erstellt; EXE- und Installer-
+  Prüfsummen sowie der ZIP-Test sind gültig. `cargo fmt --check`, 7 Rust-Tests,
+  Clippy mit `-D warnings` und `git diff --check` bestanden. Ein echter
+  Windows-Laufzeittest steht weiterhin aus.
+- Die Windows-Deinstallation entfernt jetzt zusätzlich den app-spezifischen
+  Ordner `%LOCALAPPDATA%\leaf\Leaf` und damit lokale Bücher, Lesestände und
+  Einstellungen (`reading.json`). Die gemeinsam verwendete WebView2 Runtime
+  sowie Daten anderer Benutzer bleiben erhalten. README und NSIS-Skript sind
+  entsprechend angepasst. Das neue Setup wurde mit NSIS ohne Warnungen erstellt;
+  seine SHA-256-Prüfsumme ist gültig. Kein Windows-Laufzeittest wurde durchgeführt.
+- Version auf 0.1.1 erhöht, damit Windows das aktuelle Setup eindeutig als
+  Update ausweist. Die Leseansicht verwendet nun für den flexiblen Textbereich
+  eine Null-Basis und eine `100vh`-Rückfallhöhe; dadurch kann ein WebView2-
+  Iframe weder Kopf- noch Fußleiste verdrängen oder übermalen. Die EPUB-
+  Gesamtpaginierung liest nach zwei Layout-Frames die aktuelle Rendition-
+  Position, statt eine verzögerte Ereignisposition zu bevorzugen. Das Setup
+  enthält nach 7-Zip-Entpackprüfung bytegenau dieselbe `Leaf.exe` wie
+  `dist/windows-x64/Leaf.exe`. Formatprüfung, 7 Rust-Tests, Clippy mit
+  `-D warnings`, EXE-/Installer-Prüfsummen und ZIP-Test bestanden; ein
+  Windows-Laufzeittest bleibt offen.
+- Nach dem gemeldeten unveränderten Windows-Verhalten die vorherige, nur auf
+  Layout-Frames wartende EPUB-Messung ersetzt: Jede Spine-Seite wartet nun
+  explizit auf ihr epub.js-`relocated`-Ereignis, bevor deren Seitenzahl gezählt
+  wird; bei einem Timeout erscheint eine Fehlermeldung statt still die
+  Kapitelzahl zu zeigen. Die Leseansicht ist nun ein CSS-Grid aus Kopfzeile,
+  isolierter Lesefläche, Seitennavigation, Fortschritt und Fußleiste. Version
+  auf 0.1.2 erhöht. Frische Windows-EXE, ZIP und Setup erstellt; EXE- und
+  Installer-Prüfsummen sowie ZIP-Test gültig. Formatprüfung, 7 Rust-Tests,
+  Clippy mit `-D warnings` und `git diff --check` bestanden. Ein echter
+  Windows-Laufzeittest ist weiterhin nicht möglich gewesen.
+- Der Setup-Dateiname enthält nun die vorangestellte Versionsnummer, aktuell
+  `Leaf-Setup-0.1.2-x64.exe`; die zugehörige SHA-256-Datei verwendet denselben
+  Namen. NSIS-Ausgabe und Build-Skript leiten diesen Namen konsistent aus der
+  Paketversion ab. Der alte unversionierte Setup-Dateiname wurde aus `dist/`
+  entfernt. Shell-Syntaxprüfung, NSIS-Build und Prüfsumme bestanden.

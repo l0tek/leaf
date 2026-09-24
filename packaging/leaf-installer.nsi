@@ -8,19 +8,19 @@ Unicode True
 !ifndef PROJECT_DIR
   !error "PROJECT_DIR muss auf das Projektverzeichnis zeigen."
 !endif
-!define APP_VERSION "0.1.0"
+!define APP_VERSION "0.1.2"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Leaf"
 !define WEBVIEW_KEY "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
 Name "Leaf"
-OutFile "${PROJECT_DIR}/dist/Leaf-Setup-x64.exe"
+OutFile "${PROJECT_DIR}/dist/Leaf-Setup-${APP_VERSION}-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\Leaf"
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
 BrandingText "Leaf · E-Book-Reader"
-VIProductVersion "0.1.0.0"
+VIProductVersion "0.1.2.0"
 VIAddVersionKey /LANG=1031 "ProductName" "Leaf"
 VIAddVersionKey /LANG=1031 "FileDescription" "Leaf Windows Setup"
 VIAddVersionKey /LANG=1031 "FileVersion" "${APP_VERSION}"
@@ -147,7 +147,6 @@ SectionEnd
 
 Section "Uninstall"
   SetShellVarContext current
-  ; Never recursively delete user-selected folders or saved reading data.
   ClearErrors
   Delete "$INSTDIR\Leaf.exe"
   ${If} ${Errors}
@@ -163,5 +162,8 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\Leaf"
   SetRegView 64
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
+  ; ProjectDirs stores all Leaf reading data below this application-specific path.
+  ; The uninstaller is per-user, so no data belonging to another user is touched.
+  RMDir /r "$LOCALAPPDATA\leaf\Leaf"
   ; WebView2 is shared with other applications and stays installed.
 SectionEnd

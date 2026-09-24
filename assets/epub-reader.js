@@ -69,17 +69,86 @@ window.leafEpubOpen = async function (config) {
     document.addEventListener("touchcancel", cancel, { passive: true, capture: true });
   });
 
-  const report = location => dioxus.send({
-    cfi: location.start.cfi,
-    href: location.start.href || "",
-    chapter: location.start.index || 0,
-    page: Math.max(0, (location.start.displayed?.page || 1) - 1),
-    pages: Math.max(1, location.start.displayed?.total || 1),
-    at_start: Boolean(location.atStart),
-    at_end: Boolean(location.atEnd)
-  });
+  let pageCounts = [];
+  let measuringPages = false;
+  let paginationTimer = null;
+  let lastLocation = null;
+
+  const pageMetric = location => {
+    const section = location.start.index || 0;
+    const localPage = Math.max(0, (location.start.displayed?.page || 1) - 1);
+    const knownPages = pageCounts.length ? pageCounts : [Math.max(1, location.start.displayed?.total || 1)];
+    const before = knownPages.slice(0, section).reduce((sum, pages) => sum + pages, 0);
+    return {
+      cfi: location.start.cfi,
+      href: location.start.href || "",
+      chapter: section,
+      page: before + localPage,
+      pages: Math.max(1, knownPages.reduce((sum, pages) => sum + pages, 0)),
+      at_start: Boolean(location.atStart),
+      at_end: Boolean(location.atEnd)
+    };
+  };
+  const report = location => {
+    lastLocation = location;
+    if (!measuringPages) dioxus.send(pageMetric(location));
+  };
   rendition.on("relocated", report);
   rendition.on("displayError", error => dioxus.send({ error: String(error?.message || error) }));
+
+  // rendition.display() ist auf WebView2 vor dem anschließenden relocated-
+  // Ereignis fertig. Die Seitenzahl darf deshalb erst aus genau diesem
+  // Ereignis gelesen werden, nicht aus einer möglicherweise alten Ansicht.
+  const displayAt = target => new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (location, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      rendition.off("relocated", located);
+      if (error) reject(error);
+      else if (location?.start) resolve(location);
+      else reject(new Error("EPUB-Position konnte nicht bestimmt werden."));
+    };
+    const located = location => finish(location);
+    const timeout = setTimeout(() => finish(rendition.currentLocation()), 5000);
+    rendition.on("relocated", located);
+    rendition.display(target).catch(error => finish(null, error));
+  });
+
+  // epub.js meldet displayed.total nur für das aktuell gerenderte Spine-Element.
+  // Für eine Seitennummer über das ganze Buch wird jedes Element einmal mit der
+  // aktuellen Viewport-Größe paginiert. Währenddessen bleiben Zwischenpositionen
+  // unsichtbar; anschließend wird die ursprüngliche CFI wiederhergestellt.
+  const measurePages = async () => {
+    if (measuringPages) return;
+    const restore = lastLocation?.start?.cfi || rendition.currentLocation()?.start?.cfi;
+    const sections = book.spine.spineItems || [];
+    if (!sections.length) return;
+    measuringPages = true;
+    try {
+      const counts = [];
+      for (const section of sections) {
+        const location = await displayAt(section.href);
+        counts[location.start.index] = Math.max(1, location.start.displayed?.total || 1);
+      }
+      pageCounts = Array.from({ length: sections.length }, (_, index) => counts[index] || 1);
+      await displayAt(restore || config.cfi || sections[0].href);
+    } catch (error) {
+      dioxus.send({ error: `Gesamtseitenzahl konnte nicht ermittelt werden: ${error?.message || error}` });
+    } finally {
+      measuringPages = false;
+    }
+    // relocated kann bei WebView2 erst nach display() eintreffen. Die im
+    // Handler zwischengespeicherte Position ist deshalb verlässlicher als
+    // ein weiterer synchroner currentLocation()-Aufruf.
+    const location = rendition.currentLocation() || lastLocation;
+    if (location) dioxus.send(pageMetric(location));
+  };
+  const schedulePageMeasurement = () => {
+    clearTimeout(paginationTimer);
+    paginationTimer = setTimeout(() => { measurePages(); }, 100);
+  };
 
   window.leafEpub = {
     book,
@@ -91,10 +160,12 @@ window.leafEpubOpen = async function (config) {
       rendition.themes.fontSize(`${size}px`);
       rendition.themes.font(font || "Georgia, 'Times New Roman', serif");
       rendition.themes.select(dark ? "dark" : "light");
+      schedulePageMeasurement();
     },
     destroy: () => {
       rendition.destroy();
       book.destroy();
+      clearTimeout(paginationTimer);
       window.leafEpub = null;
     }
   };
@@ -108,5 +179,6 @@ window.leafEpubOpen = async function (config) {
   };
   const toc = flatten(navigation.toc);
   if (toc.length) dioxus.send({ toc });
-  await rendition.display(config.cfi || undefined);
+  await displayAt(config.cfi || undefined);
+  await measurePages();
 };

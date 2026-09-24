@@ -6,7 +6,7 @@ Ein eigenständiger EPUB-Reader in Rust und Dioxus 0.7. Die Desktop-App öffnet 
 
 ## Entwicklungsstand
 
-Version 0.1.0: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
+Version 0.1.2: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
 Windows-Installer, Android-APK (ARM64) und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
 Der vollständige technische Stand und die nächsten offenen Prüfungen stehen in
 [PROJEKTSTAND.md](PROJEKTSTAND.md). Hinweise für spätere Arbeitssitzungen:
@@ -64,7 +64,7 @@ env -u GTK_PATH -u GIO_MODULE_DIR ./target/release/leaf
 
 ## Windows-Installer
 
-`dist/Leaf-Setup-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
+`dist/Leaf-Setup-0.1.2-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
 `%LOCALAPPDATA%\Programs\Leaf`, erstellt Startmenü-Einträge und registriert die
 Deinstallation in den Windows-Einstellungen.
 
@@ -75,9 +75,10 @@ für den Runtime-Download benötigt. Nach der Installation prüft es die Registr
 ohne erkannte Runtime bricht es vor dem Kopieren von Leaf ab. Die C-Laufzeit und der
 WebView2-Loader sind bereits in Leaf eingebunden.
 
-Deinstallation entfernt Leaf, erhält jedoch Lesedaten und die gemeinsam genutzte
-WebView2 Runtime. Vor Updates oder Deinstallation Leaf schließen.
-Unbeaufsichtigte Installation: `Leaf-Setup-x64.exe /S`.
+Deinstallation entfernt Leaf einschließlich der lokalen Bücher, Lesestände und
+Einstellungen; die gemeinsam genutzte WebView2 Runtime bleibt erhalten. Vor
+Updates oder Deinstallation Leaf schließen.
+Unbeaufsichtigte Installation: `Leaf-Setup-0.1.2-x64.exe /S`.
 
 Installer unter Linux erneut bauen:
 

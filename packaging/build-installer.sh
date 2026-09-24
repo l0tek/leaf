@@ -30,7 +30,9 @@ mv "$bootstrapper.download" "$bootstrapper"
 makensis -WX "-DPROJECT_DIR=$project_dir" packaging/leaf-installer.nsi
 python3 - <<'PY'
 import hashlib
+import tomllib
 from pathlib import Path
-p = Path('dist/Leaf-Setup-x64.exe')
+version = tomllib.loads(Path('Cargo.toml').read_text())['package']['version']
+p = Path(f'dist/Leaf-Setup-{version}-x64.exe')
 p.with_suffix('.exe.sha256').write_text(hashlib.sha256(p.read_bytes()).hexdigest() + '  ' + p.name + '\n')
 PY

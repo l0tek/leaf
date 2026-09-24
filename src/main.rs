@@ -567,8 +567,12 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
     let state = reading.read().clone();
     let chapter = &state.book.chapters[state.chapter];
     let count = state.book.chapters.len();
-    let progress = (state.chapter + 1) * 100 / count;
     let pages = page_count();
+    let progress = if state.book.epub.is_some() {
+        (state.page + 1) * 100 / pages.max(1)
+    } else {
+        (state.chapter + 1) * 100 / count
+    };
     rsx! {
         document::Style { {include_str!("../assets/main.css")} }
         div { class: if state.dark { "app dark" } else { "app" },
@@ -619,6 +623,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         button { class: "icon-button", aria_label: "Farbschema wechseln", onclick: move |_| { let dark = reading.read().dark; reading.write().dark = !dark; }, if state.dark { "☀" } else { "☾" } }
                     }
                 }
+                div { class: "reader-stage",
                 if let Some(epub_data) = state.book.epub.clone() {
                     div { class: "epub-viewer", id: "epub-viewer",
                         onmounted: move |_| {
@@ -705,13 +710,6 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                     footer { "Eine Seite nach der anderen." span { "Nimm dir Zeit." } }
                 }
                 }
-                div { class: "page-controls", aria_label: "Seitennavigation",
-                    button { disabled: if state.book.epub.is_some() { epub_at_start() } else { state.page == 0 }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("prev") } else { turn_page(-1) }, "← Seite" }
-                    span { "Seite {state.page + 1} / {pages}" }
-                    button { disabled: if state.book.epub.is_some() { epub_at_end() } else { state.page + 1 >= pages }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("next") } else { turn_page(1) }, "Seite →" }
-                }
-                div { class: "progress-track", div { style: "width: {progress}%" } }
-                div { class: "bottom-bar", span { "{state.book.author}" } span { "Kapitel {state.chapter + 1} von {count}" } }
                 if !reader_ready() {
                     div { class: "reader-loading", role: "status", aria_label: "Leseansicht wird geladen",
                         div { class: "reader-loading-mark", "◒" }
@@ -719,6 +717,14 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         span { "Die Leseansicht wird vorbereitet …" }
                     }
                 }
+                }
+                div { class: "page-controls", aria_label: "Seitennavigation",
+                    button { disabled: if state.book.epub.is_some() { epub_at_start() } else { state.page == 0 }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("prev") } else { turn_page(-1) }, "← Seite" }
+                    span { "Seite {state.page + 1} / {pages}" }
+                    button { disabled: if state.book.epub.is_some() { epub_at_end() } else { state.page + 1 >= pages }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("next") } else { turn_page(1) }, "Seite →" }
+                }
+                div { class: "progress-track", div { style: "width: {progress}%" } }
+                div { class: "bottom-bar", span { "{state.book.author}" } span { "Kapitel {state.chapter + 1} von {count}" } }
             }
         }
     }
