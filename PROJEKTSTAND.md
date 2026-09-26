@@ -440,6 +440,94 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
 
 ## Umsetzung und Prüfungen am 24. September 2026
 
+- Der Hardwaretest wurde auf dem Raspberry Pi 3 B mit dem Waveshare-7,5-Zoll-
+  V2-Panel erfolgreich ausgefuehrt. Fuer den weiteren Aufbau ist der passive
+  Geekworm G341 (1-zu-2-40-Pin-GPIO-Verteiler) festgelegt: Das Display-HAT
+  belegt einen Ausgang, die drei Taster liegen am anderen auf BCM 5 (Zurueck),
+  BCM 6 (Weiter) und BCM 13 (Menue), jeweils gegen GND. Das ist kein GPIO-
+  Expander und benoetigt keine zusaetzliche Bus-Initialisierung. Die Tasten-
+  Eingabelogik sowie Entprellung folgen spaeter. Als naechster sichtbarer
+  Schritt ersetzt eine statische Leaf-Startseite den bisherigen reinen
+  Hardwaretest-Bildschirm. Umgesetzt: Kopfbereich, Bibliotheksstatus und drei
+  noch nicht interaktive Beschriftungen fuer Zurueck, Menue und Weiter.
+  Bestanden: `cargo fmt --check`, lokaler `cargo check`, Shell-Syntaxpruefung,
+  `git diff --check` sowie ARM64-Cross-Release-Build. Der visuelle Hardwarelauf
+  dieser neuen Startseite auf dem Pi steht noch aus.
+
+- Das E-Ink-Zielgerät ist nun ein Raspberry Pi 3 B mit 64-Bit Raspberry Pi OS
+  Trixie unter `192.168.113.110`. Der bisherige ARMv6-/armhf-Build kann auf
+  einem reinen 64-Bit-System nicht starten, weil dessen dynamischer Loader
+  `/lib/ld-linux-armhf.so.3` fehlt ("cannot execute: required file not found").
+  `deploy.sh` verwendet deshalb `build-pi-3.sh` und das Ziel
+  `aarch64-unknown-linux-gnu`; der Pi-Zero-ARMv6-Build bleibt separat erhalten.
+  Durchgeführt: Rust-Ziel installiert, Shell- und Formatprüfung sowie der
+  ARM64-Cross-Release-Build. Das erzeugte ELF ist AArch64 und verwendet den
+  64-Bit-Loader `/lib/ld-linux-aarch64.so.1`; ein erneutes Deployment und der
+  Hardwarelauf auf dem Pi stehen noch aus.
+
+- Neues eigenständiges Unterprojekt `e-ink/`: Rust-Hardwaretest für das
+  Waveshare 7.5-inch-e-Paper-HAT **V2** (800 × 480, Schwarz/Weiß). Es nutzt
+  `epd-waveshare` 0.6.0 und die vom Waveshare-Referenztreiber bestätigte
+  Pi-Belegung SPI0/CE0, BCM 17 (RST), 25 (DC) und 24 (BUSY). Nach dem einmaligen
+  Vollrefresh zeigt es `Leaf e-Ink Test` und versetzt das Panel in Deep Sleep.
+- `e-ink/build-pi-zero.sh` erstellt lokal per Cross 0.2.5/Docker eine
+  ARMv6-Hard-Float-Release-Datei; `e-ink/deploy.sh` kopiert anschließend nur
+  diese Datei nach `~/leaf/e-ink/leaf-e-ink-test` auf
+  `l0tek@192.168.113.110` und startet sie mit `sudo`. Tatsächlich ausgeführt:
+  `cargo fmt --manifest-path e-ink/Cargo.toml --check`,
+  `cargo check --manifest-path e-ink/Cargo.toml`, der Cross-Release-Build,
+  Shell-Syntaxprüfung und `git diff --check`. `readelf` bestätigt ARMv6,
+  VFPv2 und den Raspberry-Pi-OS-Loader `/lib/ld-linux-armhf.so.3`.
+  Ein echtes Deployment ist noch nicht erfolgt, weil der SSH-Server die
+  Anmeldung mit `Permission denied (publickey,password)` abwies. Außerdem
+  sind die konkrete Panelrevision und die Aktivierung von SPI auf dem Pi noch
+  nicht verifiziert; V1, HD und dreifarbige 7.5-Zoll-Panels benötigen andere
+  Treiber.
+- Der Cross-Aufruf verwendet keinen absoluten `--manifest-path` mehr: Dieser
+  existiert im Cross-Docker-Container nicht. Das Skript wechselt stattdessen
+  nach `e-ink/` und ruft dort `cross build` auf. Shell-Syntaxprüfung und der
+  lokale ARMv6-Release-Build danach erfolgreich.
+- Nach einem Laufzeitfehler `Io(InvalidInput)` unmittelbar nach dem Start auf
+  dem Pi den Zugriff von `linux-embedded-hal`/GPIO-Sysfs auf `rppal` 0.22.1
+  umgestellt. Damit verwenden SPI0/CE0 und BCM-GPIO die aktuelle Pi-spezifische
+  Schnittstelle; vor dem Öffnen von SPI und GPIO erscheinen getrennte
+  Diagnosemeldungen. `cargo fmt --check`, der lokale Check und der ARMv6-
+  Release-Cross-Build bestanden. Der erneute Hardwarelauf auf dem Pi steht aus.
+- Die funktionierende Referenz auf dem Pi ist `python3 -u epd_7in5_V2_test.py`.
+  Deshalb ersetzt der Rust-Hardwaretest den abweichenden generischen
+  `epd-waveshare`-Initialisierer durch die direkte, mit diesem Python-Skript
+  übereinstimmende V2-Sequenz (Power-Parameter sowie beide Bild-RAM-Kanäle).
+  Der BUSY-Poll besitzt nun ein 30-Sekunden-Timeout. Format- und lokaler Check
+  sowie ARMv6-Release-Cross-Build erfolgreich; echter Test dieses neuen
+  Binärstands auf dem Pi noch ausstehend.
+- Fuer die weitere Hardwarediagnose melden Rust-Test und V2-Initialisierung
+  nun jeden Schritt (SPI, GPIO, Reset, Booster, Power-on, BUSY, Panel). Die
+  BUSY-Abfrage sendet wie Python zuerst `0x71` und liest dann GPIO 24.
+  Format-/Check-/ARMv6-Release-Build bestanden.
+- Die Pi-Ausgabe zeigte den Timeout beim BUSY-Poll nach `POWER ON`. Abgleich
+  mit `epdconfig.py` ergab die fehlende Freigabe `PWR_PIN = BCM 18`: Das
+  funktionierende Python-Modul setzt diesen Pin in `module_init()` auf High.
+  Der Rust-Test haelt GPIO 18 jetzt als High-Ausgang waehrend des gesamten
+  Displayzugriffs. Format, lokaler Check, ARMv6-Release-Build und ELF-Pruefung
+  bestanden; der Hardwaretest mit dieser korrigierten Datei steht aus.
+- Der folgende Hardwarelauf bestand Initialisierung und Bildaufbau, brach beim
+  48.000-Byte-Vollbildtransfer aber mit `spidev`-Fehler `EMSGSIZE` ("Message
+  too long") ab. Rust teilt Bilddaten jetzt wie die Python-`writebytes2`-
+  Implementierung in 4-KiB-Blöcke. Format, lokaler Check und ARMv6-Release-
+  Cross-Build bestanden; der Vollrefresh mit dem neuen Binärstand ist offen.
+- Ein nachfolgender Pi-Lauf stoppte vor der Controller-Initialisierung direkt
+  nach der PWR-Meldung. Die GPIO-Einrichtung erfolgt daher nun in Python-
+  Reihenfolge (PWR zuerst) und protokolliert PWR, BUSY, DC und RST einzeln.
+  Format, lokaler Check und ARMv6-Release-Cross-Build bestanden.
+- Der Pi fror beim direkten `rppal`-Zugriff während der GPIO-18-Konfiguration
+  vollständig ein. Diese Binärdatei nicht erneut ausführen. Der Rust-Test
+  verwendet deshalb jetzt ausschließlich Kernel-Devices: `gpio-cdev` über
+  `/dev/gpiochip0` für PWR/BUSY/DC/RST und `spidev` über `/dev/spidev0.0`.
+  Das liefert bei fehlender Berechtigung, nicht vorhandenen Devices oder
+  reservierten GPIOs einen normalen Fehler statt Registerzugriff. Format,
+  lokaler Check, ARMv6-Release-Cross-Build, ELF- und Diff-Prüfung bestanden;
+  der erste Hardwarelauf dieses sicheren Backends steht aus.
+
 - EPUB-Seitenzählung auf Buchumfang umgestellt: epub.js paginiert nach dem
   ersten Anzeigen alle Spine-Elemente mit der aktuellen Fenstergröße, summiert
   deren Seiten und stellt danach die ursprüngliche CFI wieder her. Die Anzeige
