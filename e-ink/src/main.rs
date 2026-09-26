@@ -11,15 +11,17 @@ use std::{
 };
 
 use embedded_graphics::{
+    image::{Image, ImageRaw},
     mono_font::{
         MonoTextStyleBuilder,
         ascii::{FONT_6X10, FONT_9X15_BOLD, FONT_10X20},
     },
+    pixelcolor::BinaryColor,
     prelude::*,
     primitives::{Line, PrimitiveStyle, Rectangle},
     text::{Baseline, Text, TextStyleBuilder},
 };
-use epd_waveshare::{epd7in5_v2::Display7in5, prelude::*};
+use epd_waveshare::{epd7in5_v2::Display7in5, graphics::DisplayRotation, prelude::*};
 use gpio_cdev::{Chip, LineHandle, LineRequestFlags};
 use spidev::{SpiModeFlags, Spidev, SpidevOptions};
 
@@ -28,8 +30,22 @@ const DC_PIN: u8 = 25;
 const BUSY_PIN: u8 = 24;
 const PWR_PIN: u8 = 18;
 const FRAME_BYTES: usize = 800 * 480 / 8;
+const PORTRAIT_ROTATION: DisplayRotation = DisplayRotation::Rotate90;
 // Standardwert von /sys/module/spidev/parameters/bufsiz auf Raspberry Pi OS.
 const SPI_CHUNK_BYTES: usize = 4096;
+
+// 32 × 32 Pixel, 1 Bit pro Pixel, Big-Endian: drei Buecher auf einem Regal.
+// Das Bitmap wird ueber `color_converted()` nach Schwarz/Weiss abgebildet.
+const BOOKS_ICON_BITMAP: [u8; 128] = [
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x1f, 0xf0, 0x00, 0x00, 0x1f, 0xf0, 0x00, 0x00, 0x18, 0x30, 0x00, 0x00, 0x18, 0x30, 0x00,
+    0x3f, 0xd8, 0x30, 0x00, 0x3f, 0xd8, 0x30, 0x00, 0x30, 0xd8, 0x30, 0x00, 0x30, 0xd8, 0x37, 0xfc,
+    0x30, 0xd8, 0x37, 0xfc, 0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c,
+    0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c,
+    0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c,
+    0x30, 0xd8, 0x36, 0x0c, 0x30, 0xd8, 0x36, 0x0c, 0x3f, 0xdf, 0xf7, 0xfc, 0x3f, 0xdf, 0xf7, 0xfc,
+    0x00, 0x00, 0x00, 0x00, 0x3f, 0xff, 0xff, 0xfc, 0x3f, 0xff, 0xff, 0xfc, 0x00, 0x00, 0x00, 0x00,
+];
 
 struct Epd {
     spi: Spidev,
@@ -143,73 +159,83 @@ fn draw_start_page(display: &mut Display7in5) {
     let fine_line = PrimitiveStyle::with_stroke(Color::Black, 1);
 
     display.clear(Color::White).expect("Bildpuffer loeschen");
-    Rectangle::new(Point::new(20, 20), Size::new(760, 440))
+    Rectangle::new(Point::new(16, 16), Size::new(448, 768))
         .into_styled(border)
         .draw(display)
         .expect("Rahmen zeichnen");
 
-    Text::with_text_style("LEAF", Point::new(44, 42), title, top)
+    Text::with_text_style("LEAF", Point::new(34, 38), title, top)
         .draw(display)
         .expect("Titel zeichnen");
-    Text::with_text_style("E-INK READER", Point::new(44, 68), small, top)
+    Text::with_text_style("E-INK READER", Point::new(34, 64), small, top)
         .draw(display)
         .expect("Untertitel zeichnen");
-    Text::with_text_style("STARTSEITE", Point::new(650, 48), small, top)
+    Text::with_text_style("STARTSEITE", Point::new(354, 48), small, top)
         .draw(display)
         .expect("Seitentitel zeichnen");
-    Line::new(Point::new(42, 94), Point::new(758, 94))
+    Line::new(Point::new(34, 92), Point::new(446, 92))
         .into_styled(fine_line)
         .draw(display)
         .expect("Kopfzeile zeichnen");
 
-    Rectangle::new(Point::new(42, 120), Size::new(716, 190))
+    Rectangle::new(Point::new(34, 120), Size::new(412, 370))
         .into_styled(border)
         .draw(display)
         .expect("Inhaltskarte zeichnen");
-    Text::with_text_style("Willkommen.", Point::new(68, 146), heading, top)
+    Text::with_text_style("Willkommen.", Point::new(58, 150), heading, top)
         .draw(display)
         .expect("Begruessung zeichnen");
+    let books_icon = ImageRaw::<BinaryColor>::new(&BOOKS_ICON_BITMAP, 32);
+    Image::new(&books_icon, Point::new(378, 148))
+        .draw(&mut display.color_converted())
+        .expect("Buecherbitmap zeichnen");
+    Text::with_text_style("Deine Bibliothek", Point::new(58, 194), title, top)
+        .draw(display)
+        .expect("Status zeichnen");
+    Text::with_text_style("ist bereit.", Point::new(58, 222), title, top)
+        .draw(display)
+        .expect("Status zeichnen");
     Text::with_text_style(
-        "Deine Bibliothek ist bereit.",
-        Point::new(68, 184),
-        title,
-        top,
-    )
-    .draw(display)
-    .expect("Status zeichnen");
-    Text::with_text_style(
-        "Noch keine Buecher importiert.",
-        Point::new(68, 224),
-        small,
-        top,
-    )
-    .draw(display)
-    .expect("Hinweis zeichnen");
-    Text::with_text_style(
-        "Der EPUB-Import folgt als naechster Schritt.",
-        Point::new(68, 244),
+        "Ein ruhiger Ort fuer deine Buecher.",
+        Point::new(58, 274),
         small,
         top,
     )
     .draw(display)
     .expect("Importhinweis zeichnen");
 
-    Line::new(Point::new(42, 350), Point::new(758, 350))
+    Rectangle::new(Point::new(58, 330), Size::new(364, 102))
+        .into_styled(fine_line)
+        .draw(display)
+        .expect("Bibliotheksstatus zeichnen");
+    Text::with_text_style("0 BUECHER", Point::new(82, 354), heading, top)
+        .draw(display)
+        .expect("Buchanzahl zeichnen");
+    Text::with_text_style(
+        "Der EPUB-Import folgt als naechster Schritt.",
+        Point::new(82, 388),
+        small,
+        top,
+    )
+    .draw(display)
+    .expect("Importhinweis zeichnen");
+
+    Line::new(Point::new(34, 650), Point::new(446, 650))
         .into_styled(fine_line)
         .draw(display)
         .expect("Fusszeile zeichnen");
-    Text::with_text_style("ZURUECK", Point::new(74, 382), heading, top)
+    Text::with_text_style("ZURUECK", Point::new(52, 682), heading, top)
         .draw(display)
         .expect("Zurueck zeichnen");
-    Text::with_text_style("MENUE", Point::new(354, 382), heading, top)
+    Text::with_text_style("MENUE", Point::new(198, 682), heading, top)
         .draw(display)
         .expect("Menue zeichnen");
-    Text::with_text_style("WEITER", Point::new(614, 382), heading, top)
+    Text::with_text_style("WEITER", Point::new(344, 682), heading, top)
         .draw(display)
         .expect("Weiter zeichnen");
     Text::with_text_style(
         "Tastenanschluss folgt ueber GPIO-Erweiterung.",
-        Point::new(218, 424),
+        Point::new(82, 724),
         small,
         top,
     )
@@ -257,6 +283,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     epd.init()?;
     println!("Display initialisiert; zeichne Leaf-Startseite …");
     let mut display = Display7in5::default();
+    display.set_rotation(PORTRAIT_ROTATION);
     draw_start_page(&mut display);
 
     println!("Sende Vollrefresh …");

@@ -450,6 +450,14 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
   Schritt ersetzt eine statische Leaf-Startseite den bisherigen reinen
   Hardwaretest-Bildschirm. Umgesetzt: Kopfbereich, Bibliotheksstatus und drei
   noch nicht interaktive Beschriftungen fuer Zurueck, Menue und Weiter.
+  Die Startseite verwendet nun standardmaessig 480 × 800 Pixel im Hochformat
+  (`DisplayRotation::Rotate90`); bei umgekehrter mechanischer Montage kann
+  gezielt auf `Rotate270` gewechselt werden.
+  Ein fest eingebettetes 32 × 32 Pixel grosses 1-Bit-Bitmap mit drei Buechern
+  ergaenzt die Startseite ohne neue Laufzeitabhaengigkeit. Nach Hochformat-
+  und Bitmap-Aenderung erneut bestanden: `cargo fmt --check`, lokaler
+  `cargo check`, `git diff --check` und ARM64-Cross-Release-Build; die
+  visuelle Pruefung auf dem Panel steht weiter aus.
   Bestanden: `cargo fmt --check`, lokaler `cargo check`, Shell-Syntaxpruefung,
   `git diff --check` sowie ARM64-Cross-Release-Build. Der visuelle Hardwarelauf
   dieser neuen Startseite auf dem Pi steht noch aus.

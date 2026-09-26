@@ -18,6 +18,13 @@ Die Anwendung verwendet die Kernel-Schnittstellen `/dev/gpiochip0` und
 Registerzugriffe werden nicht benutzt. Sie muss mit `sudo` ausgeführt werden.
 Auf dem Pi ist keine Rust-Toolchain erforderlich.
 
+Die Startseite verwendet standardmaessig das Hochformat (480 × 800 Pixel).
+Sie wird im Zeichenpuffer um 90 Grad gedreht; falls die geplante physische
+Montage die Oberkante auf die andere Seite legt, kann der Wert
+`PORTRAIT_ROTATION` in `src/main.rs` von `Rotate90` auf `Rotate270` wechseln.
+Sie zeigt zudem ein fest eingebettetes, 32 × 32 Pixel grosses 1-Bit-Bitmap mit
+drei Buechern; dafuer ist keine Bilddatei oder Laufzeit-Abhaengigkeit noetig.
+
 ## Geplanter Tastenanschluss
 
 Das Waveshare-HAT hat keinen durchgeschleiften GPIO-Header und das 7,5-Zoll-
