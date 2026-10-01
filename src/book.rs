@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     io::{Cursor, Read},
@@ -13,6 +14,9 @@ pub struct Chapter {
 }
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Book {
+    /// Stabile Kennung des Original-EPUBs für die geräteübergreifende Leseposition.
+    #[serde(default)]
+    pub sync_id: String,
     pub title: String,
     pub author: String,
     pub chapters: Vec<Chapter>,
@@ -64,6 +68,7 @@ pub fn parse(bytes: &[u8]) -> Result<Book, String> {
             .to_owned()
     };
     let mut book = Book {
+        sync_id: format!("{:x}", Sha256::digest(bytes)),
         title: metadata("title"),
         author: metadata("creator"),
         chapters: vec![],
@@ -124,8 +129,25 @@ pub fn parse(bytes: &[u8]) -> Result<Book, String> {
     Ok(book)
 }
 
+/// Alte lokale Bibliotheken hatten noch keine Kennung. Sie bleiben deshalb mit einer
+/// aus ihren unveränderlichen Metadaten abgeleiteten Kennung synchronisierbar.
+pub fn legacy_sync_id(book: &Book) -> String {
+    let mut hash = Sha256::new();
+    hash.update(book.title.as_bytes());
+    hash.update([0]);
+    hash.update(book.author.as_bytes());
+    hash.update([0]);
+    for chapter in &book.chapters {
+        hash.update(chapter.href.as_bytes());
+        hash.update([0]);
+        hash.update(chapter.title.as_bytes());
+        hash.update([0]);
+    }
+    format!("{:x}", hash.finalize())
+}
+
 pub fn demo() -> Book {
-    Book { title: "Ein neuer Anfang".into(), author: "Willkommen bei Leaf".into(), epub: None, chapters: vec![
+    Book { sync_id: "leaf-demo-v1".into(), title: "Ein neuer Anfang".into(), author: "Willkommen bei Leaf".into(), epub: None, chapters: vec![
         Chapter { title: "Die Kunst der kleinen Pause".into(), href: String::new(), html: "<p>Es gibt diese stillen Momente, in denen die Welt für einen Augenblick langsamer wird. Der Tee dampft noch, das Licht fällt weich durch das Fenster, und vor uns liegt eine Geschichte, die darauf wartet, entdeckt zu werden.</p><p>Ein Buch aufzuschlagen bedeutet, eine Tür zu öffnen. Wir wissen noch nicht, wohin sie führt. Vielleicht in eine fremde Stadt, vielleicht in eine längst vergangene Zeit. Manchmal führt sie uns einfach ein Stück näher zu uns selbst.</p><h2>Raum für Geschichten</h2><p>Leaf ist dein Platz für solche Momente. Ohne Eile. Ohne Ablenkung. Nur du und die nächste Seite.</p><p>Öffne ein eigenes EPUB über die Schaltfläche links. Deine Kapitel erscheinen im Inhaltsverzeichnis. Schriftgröße und Farbschema kannst du jederzeit anpassen.</p><blockquote>Man muss nicht weit reisen, um neue Welten zu entdecken. Manchmal genügt eine einzige Seite.</blockquote><p>Mach es dir bequem. Die Geschichte beginnt hier.</p>".into() },
         Chapter { title: "Dein nächstes Kapitel".into(), href: String::new(), html: "<p>Jede Geschichte beginnt mit Neugier. Welche möchtest du heute entdecken?</p><p>Importiere ein DRM-freies EPUB, um loszulesen. Leaf merkt sich dein zuletzt geöffnetes Buch und Kapitel auf diesem Gerät, sofern ausreichend lokaler Speicher verfügbar ist.</p><h2>Lesen in deinem Rhythmus</h2><p>Nutze das Inhaltsverzeichnis oder die Pfeile unter dem Text, um zwischen Kapiteln zu wechseln. Wähle einen dunklen Hintergrund für den Abend oder warmes Papier für den Tag.</p>".into() }
     ] }

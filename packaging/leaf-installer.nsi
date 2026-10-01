@@ -8,7 +8,7 @@ Unicode True
 !ifndef PROJECT_DIR
   !error "PROJECT_DIR muss auf das Projektverzeichnis zeigen."
 !endif
-!define APP_VERSION "0.1.2"
+!define APP_VERSION "0.1.4"
 !define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Leaf"
 !define WEBVIEW_KEY "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
@@ -20,7 +20,7 @@ SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
 BrandingText "Leaf · E-Book-Reader"
-VIProductVersion "0.1.2.0"
+VIProductVersion "0.1.4.0"
 VIAddVersionKey /LANG=1031 "ProductName" "Leaf"
 VIAddVersionKey /LANG=1031 "FileDescription" "Leaf Windows Setup"
 VIAddVersionKey /LANG=1031 "FileVersion" "${APP_VERSION}"

@@ -1,6 +1,6 @@
 # Projektstand — Leaf
 
-Stand: 24. September 2026 · Version 0.1.2
+Stand: 1. Oktober 2026 · Version 0.1.4
 Repository: https://github.com/l0tek/leaf
 
 Diese Datei ist der Einstieg für die nächste Arbeitssitzung. Sie dokumentiert den
@@ -187,6 +187,77 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
    nicht als getestet darstellen, solange kein Windows-Laufzeittest vorliegt.
 4. Nach Abschluss neue Entscheidungen, offene Punkte und Testergebnisse hier
    nachtragen. Commit/Push nur entsprechend dem jeweils autorisierten Auftrag.
+
+## Umsetzung und Prüfungen am 1. Oktober 2026
+
+- Geräteübergreifende Lesezeichensynchronisation ergänzt. Leaf erzeugt einen
+  256-Bit-Synchronisationsschlüssel oder verbindet sich mit einem vorhandenen;
+  der Abgleich erfolgt pro Buch mit dem jeweils neuesten Änderungszeitpunkt.
+  EPUBs selbst werden ausdrücklich nicht übertragen. Neue Importe verwenden die
+  SHA-256-Summe des EPUBs als Buchkennung; vorhandene Bibliotheken erhalten beim
+  Laden eine stabile Kennung aus den Metadaten.
+- Der API-Client verwendet für Web, Desktop und Android denselben Fetch-Weg zu
+  `https://mnemonic.guru/leaf/`. Ein bereitstellbarer PHP-8.1-/SQLite-Endpunkt
+  liegt unter `server/leaf/`; seine Laufzeitdaten sind per `.gitignore`
+  ausgeschlossen. Er validiert Anfragen, nutzt SQLite-WAL und löst Konflikte
+  atomar mit dem jeweils neueren Lesestand auf.
+- Bestanden: `cargo fmt`, `cargo test` (8 Tests),
+  `cargo clippy --all-targets -- -D warnings` und `git diff --check`. Der
+  PHP-Syntaxcheck konnte nicht ausgeführt werden, weil PHP auf diesem Rechner
+  nicht installiert ist.
+- Der Endpunkt ist online unter `https://mnemonic.guru/leaf/` und wurde am
+  1. Oktober 2026 per HTTPS getestet: Schlüsselanlage, leerer Abruf, Schreiben
+  eines Lesestands und erneuter Abruf lieferten jeweils die erwartete JSON-Antwort.
+  Die CORS-Preflight-Antwort ist `204` mit POST und Content-Type; der Dienst
+  läuft mit PHP 8.4.26 hinter HTTPS. Der Test verwendete einen neu erzeugten,
+  nicht weitergegebenen Schlüssel; sein einzelner Testlesestand bleibt isoliert
+  unter diesem Schlüssel gespeichert.
+
+## Client-Artefakte am 1. Oktober 2026
+
+- Linux-Desktop neu mit `cargo build --locked --release` gebaut. Die Binärdatei
+  enthält den Endpunkt `https://mnemonic.guru/leaf/`.
+- Windows-x64 neu mit `packaging/build-windows.sh` gebaut: `Leaf.exe`, portables
+  ZIP und SHA-256-Datei. Prüfsumme und ZIP-Inhalt sind gültig; die EXE ist eine
+  x64-GUI-PE-Datei und enthält ebenfalls den Endpunkt. Der Cross-Linker meldete
+  nur die bekannten LNK4099-Hinweise zu fehlenden Microsoft-PDB-Dateien. Das ist
+  kein Windows-Laufzeittest.
+- Android-APK-Build wurde gestartet, konnte jedoch vor dem Gradle-Schritt nicht
+  fortgesetzt werden: Auf diesem Rechner ist kein JDK installiert (der zuvor
+  verwendete Pfad `/usr/lib/jvm/java-17-openjdk-amd64` existiert nicht). Die
+  Android-Implementierung verwendet den gemeinsamen Client-Code; eine frische
+  APK erfordert ein JDK 17+ und anschließend `packaging/build-android.sh` mit
+  den Android-SDK-/NDK-Pfaden. Ein Windows-Installer wurde nicht neu erstellt,
+  weil `makensis` und `osslsigncode` ebenfalls nicht im PATH verfügbar sind.
+
+- Korrektur für die erste Synchronisation: Beim Einrichten eines neuen
+  Synchronisationsschlüssels erhalten bereits lokale Lesestände ohne bisherigen
+  Änderungszeitpunkt einen aktuellen Zeitstempel und werden sofort hochgeladen.
+  Beim Verbinden mit einem bestehenden Schlüssel bleibt die sichere Reihenfolge
+  Download vor Upload bestehen, damit kein älteres Gerät einen vorhandenen
+  Cloud-Stand überschreibt.
+- Frischer Windows-Installer erstellt: `dist/Leaf-Setup-0.1.2-x64.exe`
+  (NSIS, 3.999.033 Bytes) samt SHA-256-Datei. NSIS 3.10 und osslsigncode wurden
+  dafür nur temporär unter `/tmp/leaf-installer-tools.Ck3w4q` entpackt. Das
+  Build-Skript prüfte die primäre Microsoft-Authenticode-Signatur inklusive
+  Zeitstempel des eingebetteten WebView2-Bootstrappers erfolgreich; die
+  Installer-Prüfsumme und das PE-/NSIS-Format wurden anschließend bestätigt.
+  Ein echter Installationstest auf Windows steht weiterhin aus.
+- Die Synchronisationsfunktion ist eine Patch-Veröffentlichung: Paketversion
+  auf `0.1.3` erhöht; NSIS verwendet `Leaf-Setup-0.1.3-x64.exe` und die
+  Windows-Versionsressource `0.1.3.0`. Historische Artefaktverweise auf 0.1.2
+  bleiben als Sitzungsprotokoll unverändert. Windows-EXE und Installer wurden
+  anschließend mit der Paketversion 0.1.3 frisch erstellt. Der neue Installer
+  ist eine gültige NSIS-PE-Datei und seine SHA-256-Datei wurde verifiziert.
+- Release-Korrektur: Da 0.1.3 bereits veröffentlicht war, ist die aktuelle
+  Synchronisationsversion `0.1.4`. Alle neuen Paketnamen und Android-
+  `versionCode`-Werte werden daraus abgeleitet.
+- Frische Release-Artefakte 0.1.4: Android `Leaf-0.1.4-android-arm64.apk`
+  mit `versionName` 0.1.4 und `versionCode` 1004 (Prüfsumme und APK-Archiv
+  geprüft) sowie Windows `Leaf-Setup-0.1.4-x64.exe` (Prüfsumme und NSIS-PE
+  geprüft). Die Android-Ausgabe und ihre Prüfsumme enthalten künftig immer die
+  Cargo-Version im Dateinamen. Der Windows-Cross-Build ersetzt keinen echten
+  Installationstest.
 
 ## Umsetzung und Prüfungen am 9. September 2026
 
@@ -607,3 +678,11 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
   Namen. NSIS-Ausgabe und Build-Skript leiten diesen Namen konsistent aus der
   Paketversion ab. Der alte unversionierte Setup-Dateiname wurde aus `dist/`
   entfernt. Shell-Syntaxprüfung, NSIS-Build und Prüfsumme bestanden.
+- Debian-AMD64-Paketierung ergänzt: `packaging/build-deb.sh` baut die
+  Linux-Release-App, ermittelt die Laufzeitabhängigkeiten per
+  `dpkg-shlibdeps` und erzeugt `dist/leaf_0.1.2_amd64.deb` samt SHA-256-Datei.
+  Das Paket enthält `/usr/bin/leaf`, Anwendungsmenü-Eintrag, Symbol und README.
+  Shell-Syntax, Paket-Metadaten, Paketinhalt und Prüfsumme wurden geprüft.
+  Die Abhängigkeiten stammen vom aktuellen Build-System; für andere
+  Debian-/Ubuntu-Releases muss das Paket auf dem jeweiligen Zielrelease gebaut
+  werden. Kein Installations- oder Laufzeittest des DEB wurde ausgeführt.

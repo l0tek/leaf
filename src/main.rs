@@ -6,6 +6,7 @@
 mod book;
 use dioxus::prelude::*;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Reading {
@@ -21,6 +22,9 @@ struct Reading {
     cfi: String,
     #[serde(default = "default_font_value")]
     font: String,
+    /// Millisekunden seit Unix-Epoche; Konflikte werden pro Buch nach dem neuesten Stand gelöst.
+    #[serde(default)]
+    updated_at: u64,
 }
 impl Default for Reading {
     fn default() -> Self {
@@ -33,6 +37,7 @@ impl Default for Reading {
             scroll_top: 0.0,
             cfi: String::new(),
             font: default_font().into(),
+            updated_at: 0,
         }
     }
 }
@@ -64,12 +69,54 @@ fn font_family(font: &str) -> &'static str {
 struct Library {
     books: Vec<Reading>,
     active: Option<usize>,
+    #[serde(default)]
+    sync: SyncSettings,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+struct SyncSettings {
+    key: String,
+    enabled: bool,
+}
+
+#[derive(Clone, Serialize)]
+struct SyncRequest<'a> {
+    action: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    key: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bookmarks: Option<Vec<Bookmark>>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Bookmark {
+    id: String,
+    chapter: usize,
+    page: usize,
+    scroll_top: f64,
+    cfi: String,
+    size: u32,
+    dark: bool,
+    font: String,
+    updated_at: u64,
+}
+
+#[derive(Deserialize)]
+struct SyncReply {
+    ok: bool,
+    #[serde(default)]
+    key: String,
+    #[serde(default)]
+    bookmarks: Vec<Bookmark>,
+    #[serde(default)]
+    error: String,
 }
 impl Default for Library {
     fn default() -> Self {
         Self {
             books: vec![Reading::default()],
             active: None,
+            sync: SyncSettings::default(),
         }
     }
 }
@@ -89,6 +136,131 @@ impl Library {
         self.active = Some(index);
     }
 }
+
+const SYNC_ENDPOINT: &str = "https://mnemonic.guru/leaf/";
+
+/// Der Server erwartet einen 256-Bit-Schlüssel. Ein selbst gewählter kurzer
+/// Verbindungscode wird deshalb lokal in dieselbe stabile Form überführt;
+/// die Klartext-Phrase verlässt das Gerät nie.
+fn sync_key(code: &str) -> String {
+    let code = code.trim();
+    if code.len() == 64 && code.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        code.to_ascii_lowercase()
+    } else {
+        format!("{:x}", Sha256::digest(code.as_bytes()))
+    }
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn bookmark(reading: &Reading) -> Bookmark {
+    Bookmark {
+        id: reading.book.sync_id.clone(),
+        chapter: reading.chapter,
+        page: reading.page,
+        scroll_top: reading.scroll_top,
+        cfi: reading.cfi.clone(),
+        size: reading.size,
+        dark: reading.dark,
+        font: reading.font.clone(),
+        updated_at: reading.updated_at,
+    }
+}
+
+fn bookmarks(library: &Library) -> Vec<Bookmark> {
+    library.books.iter().map(bookmark).collect()
+}
+
+fn mark_changed(reading: &mut Reading) {
+    reading.updated_at = now_millis();
+}
+
+/// Beim ersten Einrichten existieren die lokalen Lesestände oft schon länger
+/// als die Synchronisation. Sie erhalten deshalb einen echten Zeitstempel,
+/// bevor sie erstmals zum neu angelegten Schlüssel hochgeladen werden.
+fn prepare_initial_upload(library: &mut Library) {
+    let timestamp = now_millis();
+    for reading in &mut library.books {
+        if reading.updated_at == 0 {
+            reading.updated_at = timestamp;
+        }
+    }
+}
+
+fn merge_bookmarks(library: &mut Library, remote: Vec<Bookmark>) -> bool {
+    let mut changed = false;
+    for remote in remote {
+        if let Some(local) = library
+            .books
+            .iter_mut()
+            .find(|entry| entry.book.sync_id == remote.id)
+            && remote.updated_at > local.updated_at
+        {
+            local.chapter = remote
+                .chapter
+                .min(local.book.chapters.len().saturating_sub(1));
+            local.page = remote.page;
+            local.scroll_top = remote.scroll_top.max(0.0);
+            local.cfi = remote.cfi;
+            local.size = remote.size.clamp(16, 28);
+            local.dark = remote.dark;
+            local.font = normalized_font(&remote.font).into();
+            local.updated_at = remote.updated_at;
+            changed = true;
+        }
+    }
+    changed
+}
+
+async fn sync_request(request: &SyncRequest<'_>) -> Result<SyncReply, String> {
+    let request = serde_json::to_string(request)
+        .map_err(|_| "Synchronisationsdaten sind ungültig.".to_string())?;
+    let script = format!(
+        "{}\nleafSync({}, {});",
+        include_str!("../assets/sync.js"),
+        serde_json::to_string(SYNC_ENDPOINT).unwrap_or_default(),
+        request
+    );
+    let mut evaluator = document::eval(&script);
+    let reply = evaluator
+        .recv::<SyncReply>()
+        .await
+        .map_err(|_| "Der Sync-Dienst ist nicht erreichbar.".to_string())?;
+    if reply.ok {
+        Ok(reply)
+    } else {
+        Err(reply.error)
+    }
+}
+
+async fn pull_bookmarks(mut library: Signal<Library>) -> Result<(), String> {
+    let key = library.peek().sync.key.clone();
+    let reply = sync_request(&SyncRequest {
+        action: "pull",
+        key: Some(&key),
+        bookmarks: None,
+    })
+    .await?;
+    merge_bookmarks(&mut library.write(), reply.bookmarks);
+    Ok(())
+}
+
+async fn push_bookmarks(mut library: Signal<Library>) -> Result<(), String> {
+    let snapshot = library.peek().clone();
+    let reply = sync_request(&SyncRequest {
+        action: "push",
+        key: Some(&snapshot.sync.key),
+        bookmarks: Some(bookmarks(&snapshot)),
+    })
+    .await?;
+    merge_bookmarks(&mut library.write(), reply.bookmarks);
+    Ok(())
+}
 fn decode_library(value: &str) -> Option<Library> {
     let mut library = serde_json::from_str::<Library>(value).ok().or_else(|| {
         serde_json::from_str::<Reading>(value)
@@ -96,6 +268,7 @@ fn decode_library(value: &str) -> Option<Library> {
             .map(|reading| Library {
                 books: vec![reading],
                 active: Some(0),
+                sync: SyncSettings::default(),
             })
     })?;
     // Ungültige Kapitel dürfen weder Indexzugriffe noch einen falschen Buchwechsel auslösen.
@@ -110,6 +283,9 @@ fn decode_library(value: &str) -> Option<Library> {
     });
     library.books.retain(|r| !r.book.chapters.is_empty());
     for state in &mut library.books {
+        if state.book.sync_id.is_empty() {
+            state.book.sync_id = book::legacy_sync_id(&state.book);
+        }
         state.chapter = state.chapter.min(state.book.chapters.len() - 1);
         state.size = state.size.clamp(16, 28);
         state.scroll_top = state.scroll_top.max(0.0);
@@ -458,6 +634,69 @@ mod storage_tests {
             1
         );
     }
+
+    #[test]
+    fn keeps_the_newest_remote_bookmark() {
+        let mut library = Library::default();
+        library.books[0].updated_at = 4;
+        let changed = merge_bookmarks(
+            &mut library,
+            vec![Bookmark {
+                id: "leaf-demo-v1".into(),
+                chapter: 1,
+                page: 3,
+                scroll_top: 0.0,
+                cfi: "epubcfi(/6/4)".into(),
+                size: 24,
+                dark: true,
+                font: "sans".into(),
+                updated_at: 5,
+            }],
+        );
+        assert!(changed);
+        assert_eq!(library.books[0].chapter, 1);
+        assert_eq!(library.books[0].page, 3);
+        assert_eq!(library.books[0].font, "sans");
+        assert!(!merge_bookmarks(
+            &mut library,
+            vec![Bookmark {
+                id: "leaf-demo-v1".into(),
+                chapter: 0,
+                page: 0,
+                scroll_top: 0.0,
+                cfi: String::new(),
+                size: 16,
+                dark: false,
+                font: "serif".into(),
+                updated_at: 4,
+            }],
+        ));
+    }
+
+    #[test]
+    fn first_sync_marks_existing_local_positions_for_upload() {
+        let mut library = Library::default();
+        library.books[0].updated_at = 0;
+        let second = Reading {
+            updated_at: 42,
+            ..Reading::default()
+        };
+        library.books.push(second);
+        prepare_initial_upload(&mut library);
+        assert!(library.books[0].updated_at > 0);
+        assert_eq!(library.books[1].updated_at, 42);
+    }
+
+    #[test]
+    fn short_connection_code_becomes_server_key() {
+        assert_eq!(
+            sync_key("leaf1"),
+            "d103cfb5e499c566904787533afbdec56f95492d67fc00e2c0d0161ba99653f1"
+        );
+        assert_eq!(sync_key(" abcd"), sync_key("abcd"));
+        let generated = "a".repeat(64);
+        assert_eq!(sync_key(&generated), generated);
+    }
 }
 
 async fn pick_android_epub() -> Result<Option<Vec<u8>>, String> {
@@ -496,6 +735,83 @@ async fn pick_android_epub() -> Result<Option<Vec<u8>>, String> {
 }
 
 #[component]
+fn SyncControl(mut library: Signal<Library>, compact: bool) -> Element {
+    let mut key_input = use_signal(move || library.peek().sync.key.clone());
+    let mut message = use_signal(String::new);
+    let mut busy = use_signal(|| false);
+    let connected = library.read().sync.enabled;
+    rsx! {
+        div { class: if compact { "sync-control compact" } else { "sync-control" },
+            div { class: "sync-heading", "☁ Lesestand synchronisieren" }
+            if connected {
+                p { "Dieses Gerät ist verbunden. EPUB-Dateien bleiben privat auf deinen Geräten." }
+                div { class: "sync-actions",
+                    button { disabled: busy(), onclick: move |_| {
+                        busy.set(true); message.set(String::new());
+                        spawn(async move {
+                            let result = match pull_bookmarks(library).await {
+                                Ok(()) => push_bookmarks(library).await,
+                                Err(error) => Err(error),
+                            };
+                            message.set(match result { Ok(()) => "Lesestand abgeglichen.".into(), Err(error) => error });
+                            busy.set(false);
+                        });
+                    }, if busy() { "Synchronisiert …" } else { "Jetzt synchronisieren" } }
+                    button { onclick: move |_| {
+                        library.write().sync.enabled = false;
+                        key_input.set(String::new());
+                        message.set(String::new());
+                    }, "Anderen Code verwenden" }
+                }
+                label { class: "sync-key-label", "Erzeugter Schlüssel für weitere Geräte" }
+            } else {
+                p { "Verbinde weitere Leaf-Installationen mit demselben Code." }
+                button { class: "sync-create", disabled: busy(), onclick: move |_| {
+                    busy.set(true); message.set(String::new());
+                    spawn(async move {
+                        let result = sync_request(&SyncRequest { action: "create", key: None, bookmarks: None }).await;
+                        match result {
+                            Ok(reply) if !reply.key.is_empty() => {
+                                key_input.set(reply.key.clone());
+                                {
+                                    let mut state = library.write();
+                                    state.sync = SyncSettings { key: reply.key, enabled: true };
+                                    prepare_initial_upload(&mut state);
+                                }
+                                message.set(match push_bookmarks(library).await { Ok(()) => "Schlüssel erstellt und Lesestand hochgeladen.".into(), Err(error) => error });
+                            }
+                            Ok(_) => message.set("Der Dienst hat keinen Schlüssel geliefert.".into()),
+                            Err(error) => message.set(error),
+                        }
+                        busy.set(false);
+                    });
+                }, if busy() { "Wird eingerichtet …" } else { "Synchronisierung einrichten" } }
+                label { class: "sync-key-label", "Vorhandenen Code eingeben (z. B. leaf1)" }
+            }
+            input { class: "sync-key", value: "{key_input}", autocomplete: "off", spellcheck: "false", placeholder: "Verbindungscode", onchange: move |event| key_input.set(event.value()) }
+            if !connected {
+                button { class: "sync-connect", disabled: busy() || key_input().trim().is_empty(), onclick: move |_| {
+                    let key = sync_key(&key_input());
+                    busy.set(true); message.set(String::new());
+                    spawn(async move {
+                        library.write().sync = SyncSettings { key, enabled: false };
+                        match pull_bookmarks(library).await {
+                            Ok(()) => {
+                                library.write().sync.enabled = true;
+                                message.set("Gerät verbunden; der neueste Lesestand wurde geladen.".into());
+                            }
+                            Err(error) => message.set(error),
+                        }
+                        busy.set(false);
+                    });
+                }, "Gerät verbinden" }
+            }
+            if !message().is_empty() { p { class: "sync-message", role: "status", "{message}" } }
+        }
+    }
+}
+
+#[component]
 fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> Element {
     let mut reading = use_signal(move || library.peek().books[index].clone());
     let mut reader_ready = use_signal(|| false);
@@ -505,7 +821,13 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
     let mut epub_at_end = use_signal(|| false);
     let mut epub_error = use_signal(String::new);
     use_effect(move || {
-        library.write().books[index] = reading.read().clone();
+        let local = reading.read().clone();
+        let remote = library.read().books[index].clone();
+        if remote.updated_at > local.updated_at {
+            reading.set(remote);
+        } else if local.updated_at > remote.updated_at {
+            library.write().books[index] = local;
+        }
     });
     let appearance = use_memo(move || {
         let state = reading.read();
@@ -580,6 +902,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                 a { class: "brand", href: "#", "◒" span { "leaf" } }
                 p { class: "tagline", "Ein guter Ort für Geschichten." }
                 ImportBook { onimport: move |book| library.write().import(book) }
+                SyncControl { library, compact: true }
                 div { class: "section-label", "DEIN BUCH" }
                 div { class: "book-card", div { class: "cover", "L" } div { strong { "{state.book.title}" } small { "{state.book.author}" } } }
                 div { class: "section-label contents-label", "INHALT" span { "{count} Kapitel" } }
@@ -591,7 +914,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                                 epub_display(&reading.peek().book.chapters[index].href);
                             } else {
                                 let mut r = reading.write();
-                                if r.chapter != index { r.chapter = index; r.page = 0; r.scroll_top = 0.0; }
+                                if r.chapter != index { r.chapter = index; r.page = 0; r.scroll_top = 0.0; mark_changed(&mut r); }
                             }
                             menu.set(false);
                         },
@@ -611,16 +934,16 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         state.active = None;
                     }, "Buch schließen" }
                     div { class: "tools",
-                        button { class: "icon-button", aria_label: "Schrift verkleinern", disabled: state.size <= 16, onclick: move |_| { reading.write().size -= 2; }, "A−" }
+                        button { class: "icon-button", aria_label: "Schrift verkleinern", disabled: state.size <= 16, onclick: move |_| { let mut r = reading.write(); r.size -= 2; mark_changed(&mut r); }, "A−" }
                         span { class: "font-size", "{state.size}" }
-                        button { class: "icon-button", aria_label: "Schrift vergrößern", disabled: state.size >= 28, onclick: move |_| { reading.write().size += 2; }, "A+" }
-                        select { class: "font-family", aria_label: "Schriftart", value: "{state.font}", onchange: move |event| reading.write().font = normalized_font(&event.value()).into(),
+                        button { class: "icon-button", aria_label: "Schrift vergrößern", disabled: state.size >= 28, onclick: move |_| { let mut r = reading.write(); r.size += 2; mark_changed(&mut r); }, "A+" }
+                        select { class: "font-family", aria_label: "Schriftart", value: "{state.font}", onchange: move |event| { let mut r = reading.write(); r.font = normalized_font(&event.value()).into(); mark_changed(&mut r); },
                             option { value: "serif", "Serif" }
                             option { value: "sans", "Sans" }
                             option { value: "mono", "Mono" }
                         }
                         span { class: "divider" }
-                        button { class: "icon-button", aria_label: "Farbschema wechseln", onclick: move |_| { let dark = reading.read().dark; reading.write().dark = !dark; }, if state.dark { "☀" } else { "☾" } }
+                        button { class: "icon-button", aria_label: "Farbschema wechseln", onclick: move |_| { let mut r = reading.write(); r.dark = !r.dark; mark_changed(&mut r); }, if state.dark { "☀" } else { "☾" } }
                     }
                 }
                 div { class: "reader-stage",
@@ -658,12 +981,16 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                                         continue;
                                     }
                                     let mut current = reading.write();
+                                    let changed = current.cfi != metrics.cfi
+                                        || current.page != metrics.page
+                                        || current.chapter != metrics.chapter;
                                     current.cfi = metrics.cfi;
                                     let location_path = metrics.href.split('#').next().unwrap_or("");
                                     current.chapter = current.book.chapters.iter().position(|chapter| {
                                         chapter.href.split('#').next().unwrap_or("") == location_path
                                     }).unwrap_or(metrics.chapter).min(current.book.chapters.len() - 1);
                                     current.page = metrics.page;
+                                    if changed { mark_changed(&mut current); }
                                     page_count.set(metrics.pages);
                                     epub_at_start.set(metrics.at_start);
                                     epub_at_end.set(metrics.at_end);
@@ -692,6 +1019,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                             let mut state = reading.write();
                             state.page = current_page;
                             state.scroll_top = top;
+                            mark_changed(&mut state);
                         }
                     },
                     key: "{index}-{state.chapter}",
@@ -702,9 +1030,9 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                         div { class: "prose", dangerous_inner_html: "{chapter.html}" }
                         div { class: "chapter-end", "· · ·" }
                         div { class: "chapter-navigation",
-                            button { disabled: state.chapter == 0, onclick: move |_| { let mut r = reading.write(); r.chapter -= 1; r.page = 0; r.scroll_top = 0.0; }, "← Kapitel" }
+                            button { disabled: state.chapter == 0, onclick: move |_| { let mut r = reading.write(); r.chapter -= 1; r.page = 0; r.scroll_top = 0.0; mark_changed(&mut r); }, "← Kapitel" }
                             span { "Kapitel {state.chapter + 1} / {count}" }
-                            button { disabled: state.chapter + 1 >= count, onclick: move |_| { let mut r = reading.write(); r.chapter += 1; r.page = 0; r.scroll_top = 0.0; }, "Kapitel →" }
+                            button { disabled: state.chapter + 1 >= count, onclick: move |_| { let mut r = reading.write(); r.chapter += 1; r.page = 0; r.scroll_top = 0.0; mark_changed(&mut r); }, "Kapitel →" }
                         }
                     }
                     footer { "Eine Seite nach der anderen." span { "Nimm dir Zeit." } }
@@ -783,6 +1111,28 @@ fn App() -> Element {
     let mut library = use_signal(restore);
     let mut saved = use_signal(|| true);
     use_effect(move || saved.set(save(&library.read())));
+    let sync_revision = use_memo(move || {
+        let state = library.read();
+        serde_json::to_string(&(
+            state.sync.key.clone(),
+            state.sync.enabled,
+            bookmarks(&state),
+        ))
+        .unwrap_or_default()
+    });
+    use_effect(move || {
+        let _ = sync_revision();
+        if !library.peek().sync.enabled || library.peek().sync.key.is_empty() {
+            return;
+        }
+        // Erst herunterladen, dann hochladen: Ein frisch verbundenes Gerät kann
+        // keinen älteren lokalen Stand über den Cloud-Stand schreiben.
+        spawn(async move {
+            if pull_bookmarks(library).await.is_ok() {
+                let _ = push_bookmarks(library).await;
+            }
+        });
+    });
     let active = use_memo(move || library.read().active);
     rsx! {
         document::Style { {include_str!("../assets/main.css")} }
@@ -792,9 +1142,9 @@ fn App() -> Element {
             main { class: "library",
                 header { div { class: "brand", "◒" span { "leaf" } } span { "Deine Bücher. Dein Lesemoment." } }
                 section { class: "library-content",
-                    div { class: "library-heading",
-                        div { h1 { "Deine Bücher" } p { "Wähle ein Buch und lies dort weiter, wo du aufgehört hast." } }
-                        div { class: "library-import", ImportBook { onimport: move |book| library.write().import(book) } }
+                        div { class: "library-heading",
+                            div { h1 { "Deine Bücher" } p { "Wähle ein Buch und lies dort weiter, wo du aufgehört hast." } }
+                        div { class: "library-import", ImportBook { onimport: move |book| library.write().import(book) } SyncControl { library, compact: false } }
                     }
                     if !saved() { p { class: "notice", role: "alert", "Speicher voll oder nicht verfügbar" } }
                     if library.read().books.is_empty() {

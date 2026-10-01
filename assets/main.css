@@ -156,6 +156,27 @@ nav {
   display:flex;
   align-items:center;
   gap:7px}
+.sync-control {
+  margin-top:22px;
+  padding:13px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  font-size:10px;
+  color:var(--muted)}
+.sync-control.compact {margin-top:20px}
+.sync-heading {color:var(--accent);font-weight:700;font-size:11px}
+.sync-control p {margin:8px 0;line-height:1.45}
+.sync-key-label {display:block;margin-top:10px;font-size:9px}
+.sync-key {
+  width:100%;margin-top:5px;padding:7px;border:1px solid var(--line);
+  border-radius:4px;color:var(--ink);background:var(--paper);
+  font:9px ui-monospace,monospace}
+.sync-actions,.sync-control button {display:flex;gap:7px;margin-top:9px}
+.sync-control button {
+  border:1px solid var(--line);border-radius:4px;padding:7px 8px;
+  color:var(--accent);background:transparent;font-size:10px}
+.sync-control .sync-create {background:var(--accent);color:var(--paper);border-color:var(--accent)}
+.sync-message {color:var(--accent)}
 .status-dot {
   width:5px;
   height:5px;

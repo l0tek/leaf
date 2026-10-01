@@ -10,6 +10,22 @@ export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 android_project="target/dx/leaf/release/android/app"
 android_app="$android_project/app"
 res="$android_app/src/main/res"
+version=$(python3 - <<'PY'
+import tomllib
+from pathlib import Path
+print(tomllib.loads(Path('Cargo.toml').read_text())['package']['version'])
+PY
+)
+version_code=$(python3 - "$version" <<'PY'
+import re
+import sys
+match = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', sys.argv[1])
+if not match:
+    raise SystemExit('Version muss das Format MAJOR.MINOR.PATCH haben.')
+major, minor, patch = map(int, match.groups())
+print(major * 1_000_000 + minor * 1_000 + patch)
+PY
+)
 # Ein vorheriger abgebrochener Lauf kann noch unsere PNG-Varianten enthalten.
 # Dioxus erzeugt dann zunächst wieder seine WebP-Dateien; beides hätte denselben
 # Android-Ressourcennamen. Nur generierte Zielressourcen werden hier entfernt.
@@ -18,6 +34,21 @@ for density in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
 done
 
 dx build --android --release --no-default-features --features mobile --target aarch64-linux-android
+
+# Dioxus übernimmt den Anzeigenamen aus Cargo.toml, erzeugt aber derzeit stets
+# versionCode 1. Ein monotoner Code ist nötig, damit Android die neue APK als Update
+# gegenüber einer älteren Leaf-APK akzeptiert.
+python3 - "$android_app/build.gradle.kts" "$version_code" <<'PY'
+import re
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+source = path.read_text()
+updated, count = re.subn(r'versionCode\s*=\s*\d+', f'versionCode = {sys.argv[2]}', source, count=1)
+if count != 1:
+    raise SystemExit('Android-versionCode wurde nicht gefunden.')
+path.write_text(updated)
+PY
 
 # Dioxus 0.7 bringt eigene Launcher-Ressourcen mit und berücksichtigt
 # `bundle.icon` auf Android noch nicht. Die vorbereiteten Dichtevarianten
@@ -38,6 +69,7 @@ if [[ ! -f "$apk" ]]; then
     echo "Die erwartete Test-APK fehlt: $apk" >&2
     exit 1
 fi
-cp "$apk" dist/Leaf-android-arm64.apk
-(cd dist && sha256sum Leaf-android-arm64.apk > Leaf-android-arm64.apk.sha256)
-echo "Erstellt: dist/Leaf-android-arm64.apk"
+output="Leaf-${version}-android-arm64.apk"
+cp "$apk" "dist/$output"
+(cd dist && sha256sum "$output" > "$output.sha256")
+echo "Erstellt: dist/$output"

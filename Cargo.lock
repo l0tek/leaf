@@ -2797,7 +2797,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "leaf"
-version = "0.1.2"
+version = "0.1.4"
 dependencies = [
  "ammonia",
  "base64",
@@ -2808,6 +2808,7 @@ dependencies = [
  "roxmltree",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "web-sys",
  "zip",

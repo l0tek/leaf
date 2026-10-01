@@ -6,7 +6,7 @@ Ein eigenständiger EPUB-Reader in Rust und Dioxus 0.7. Die Desktop-App öffnet 
 
 ## Entwicklungsstand
 
-Version 0.1.2: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
+Version 0.1.4: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
 Windows-Installer, Android-APK (ARM64) und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
 Der vollständige technische Stand und die nächsten offenen Prüfungen stehen in
 [PROJEKTSTAND.md](PROJEKTSTAND.md). Hinweise für spätere Arbeitssitzungen:
@@ -54,6 +54,19 @@ Optionale Installation für den aktuellen Linux-Benutzer, einschließlich Anwend
 
 Installiert nach `~/.local/bin/leaf` und `${XDG_DATA_HOME:-~/.local/share}`. Die Installation ist kein distributionsunabhängiges AppImage. Ein macOS-Build wurde hier nicht geprüft. Für Windows steht ein Cross-Build zur Verfügung.
 
+### Debian-Paket (amd64)
+
+Für Debian/Ubuntu erstellt das folgende Skript ein natives Paket einschließlich
+Programm, Anwendungsmenü-Eintrag und Symbol unter `dist/`:
+
+```sh
+./packaging/build-deb.sh
+```
+
+Die Ausgabe heißt `dist/leaf_<Version>_amd64.deb`; die SHA-256-Datei erhält
+denselben Namen mit der Endung `.sha256`. Benötigt werden Cargo sowie die
+Debian-Werkzeuge `dpkg-deb` und `dpkg-shlibdeps`.
+
 ### Start aus einer Snap-IDE
 
 Falls der Start aus VS Code als Snap mit einem `GLIBC_PRIVATE`-Fehler abbricht, entferne dessen geerbte GTK-/GIO-Pfade nur für diesen Aufruf:
@@ -64,7 +77,7 @@ env -u GTK_PATH -u GIO_MODULE_DIR ./target/release/leaf
 
 ## Windows-Installer
 
-`dist/Leaf-Setup-0.1.2-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
+`dist/Leaf-Setup-0.1.4-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
 `%LOCALAPPDATA%\Programs\Leaf`, erstellt Startmenü-Einträge und registriert die
 Deinstallation in den Windows-Einstellungen.
 
@@ -78,7 +91,7 @@ WebView2-Loader sind bereits in Leaf eingebunden.
 Deinstallation entfernt Leaf einschließlich der lokalen Bücher, Lesestände und
 Einstellungen; die gemeinsam genutzte WebView2 Runtime bleibt erhalten. Vor
 Updates oder Deinstallation Leaf schließen.
-Unbeaufsichtigte Installation: `Leaf-Setup-0.1.2-x64.exe /S`.
+Unbeaufsichtigte Installation: `Leaf-Setup-0.1.4-x64.exe /S`.
 
 Installer unter Linux erneut bauen:
 
@@ -118,7 +131,7 @@ Für das eingebettete Windows-Icon wird zusätzlich `llvm-rc` benötigt; bei ges
 
 ## Android-APK (ARM64)
 
-Die lokale Datei `dist/Leaf-android-arm64.apk` ist für Android ab Version 7
+Die lokale Datei `dist/Leaf-0.1.4-android-arm64.apk` ist für Android ab Version 7
 (API 24) auf ARM64-Geräten vorgesehen. Zum Installieren auf das Gerät kopieren
 und öffnen oder `adb install -r dist/Leaf-android-arm64.apk` verwenden.
 
@@ -136,7 +149,7 @@ rustup target add aarch64-linux-android
 Die APK enthält optimierten Rust-Code, ist aber mit dem lokalen Android-Debugschlüssel
 signiert und als Testpaket gedacht. Für eine Veröffentlichung ist ein dauerhafter
 Release-Schlüssel erforderlich. Die Prüfsumme steht in
-`dist/Leaf-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
+`dist/Leaf-0.1.4-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
 EPUB-Import über die Android-Dateiauswahl und Wiederherstellung der Lesestelle
 nach vollständigem App-Neustart geprüft. Android speichert `reading.json` im privaten Dateienverzeichnis der
 App; eine Deinstallation entfernt diese Daten.
@@ -159,6 +172,25 @@ Buch-Icon in jeweils passenden Bildgrößen.
 - Bereinigung importierter HTML-Inhalte; keine externen Buchressourcen
 
 Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. epub.js paginiert importierte Bücher in einer isolierten Buchansicht; Seitentasten, interne Links und Inhaltsverzeichnis verwenden die EPUB-eigenen Ziele. Die aktuelle Stelle wird als EPUB-CFI gespeichert und beim erneuten Öffnen wiederhergestellt. Das eingebaute Beispielbuch und ältere gespeicherte Importe ohne Originalarchiv verwenden weiterhin die bisherige Textansicht.
+
+### Online-Lesezeichen
+
+Leaf kann Lesestände zwischen Geräten über `https://mnemonic.guru/leaf/`
+abgleichen. In der Bibliothek oder Seitenleiste **Synchronisierung einrichten**
+wählen und entweder den erzeugten 64-stelligen Schlüssel oder einen selbst
+gewählten Verbindungscode (beispielsweise `leaf1`) auf allen Geräten unter
+**Gerät verbinden** eingeben. Ein eigener Code wird nur lokal in einen
+256-Bit-Schlüssel abgeleitet. Danach wird bei einer Änderung zunächst der
+Cloud-Stand geladen und anschließend der neueste Stand pro Buch hochgeladen.
+
+Übertragen werden nur die SHA-256-Buchkennung, Kapitel/Seite bzw. EPUB-CFI,
+Leseeinstellungen und der Änderungszeitpunkt. EPUB-Dateien bleiben ausschließlich
+lokal und müssen auf jedem Gerät selbst importiert werden. Der Schlüssel ist die
+Zugangsberechtigung der Gerätegruppe und darf nicht weitergegeben werden.
+
+Der bereitstellbare PHP-/SQLite-Endpunkt liegt in
+[`server/leaf/`](server/leaf/README.md). Der Server benötigt PHP 8.1+ mit
+`pdo_sqlite`, HTTPS und Schreibrecht für sein lokales Verzeichnis `data/`.
 
 PDF und DRM werden nicht unterstützt. Die Web-Version unterliegt weiterhin dem
 begrenzten Local Storage des Browsers; das Original-EPUB wird für die Offline-Anzeige
