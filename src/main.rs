@@ -797,8 +797,16 @@ fn SyncControl(mut library: Signal<Library>, compact: bool) -> Element {
                         library.write().sync = SyncSettings { key, enabled: false };
                         match pull_bookmarks(library).await {
                             Ok(()) => {
-                                library.write().sync.enabled = true;
-                                message.set("Gerät verbunden; der neueste Lesestand wurde geladen.".into());
+                                // Nicht nur auf den nachgelagerten Effekt vertrauen:
+                                // Der erste lokale Stand muss unmittelbar nach einem
+                                // erfolgreichen Download zum Server gelangen.
+                                match push_bookmarks(library).await {
+                                    Ok(()) => {
+                                        library.write().sync.enabled = true;
+                                        message.set("Gerät verbunden und Lesestand abgeglichen.".into());
+                                    }
+                                    Err(error) => message.set(error),
+                                }
                             }
                             Err(error) => message.set(error),
                         }

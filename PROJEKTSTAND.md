@@ -1,6 +1,6 @@
 # Projektstand — Leaf
 
-Stand: 1. Oktober 2026 · Version 0.1.4
+Stand: 28. Oktober 2026 · Arbeitsstand Version 0.1.5 (noch nicht committet)
 Repository: https://github.com/l0tek/leaf
 
 Diese Datei ist der Einstieg für die nächste Arbeitssitzung. Sie dokumentiert den
@@ -15,9 +15,9 @@ Windows-x64-EXE und einen Windows-Installer mit bedarfsgerechter Installation vo
 WebView2 erweitert. Desktop ist das Standard-Cargo-Feature; Web bleibt optional.
 Die Oberfläche und das Beispielbuch sind deutsch. Bücher werden lokal verarbeitet.
 
-Aktueller Auftrag: Projektstatus ermitteln und das Navigations- und Anzeigeproblem
-mit epub.js lösen. Zu Beginn war der Arbeitsbaum sauber. Kein Commit oder Push für
-diese Sitzung beauftragt.
+Aktueller Auftrag: Lokalen Projektstand prüfen und die Übergabedokumentation
+aktualisieren. Die Versions- und Synchronisationsänderungen für 0.1.5 waren zu
+Beginn bereits uncommittet; kein Commit oder Push ist beauftragt.
 
 ## Implementiert
 
@@ -686,3 +686,20 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
   Die Abhängigkeiten stammen vom aktuellen Build-System; für andere
   Debian-/Ubuntu-Releases muss das Paket auf dem jeweiligen Zielrelease gebaut
   werden. Kein Installations- oder Laufzeittest des DEB wurde ausgeführt.
+
+## Umsetzung und Prüfungen am 28. Oktober 2026
+
+- Lokaler Arbeitsstand für Version 0.1.5, weiterhin ohne Commit: `Cargo.toml`
+  und `Cargo.lock` führen 0.1.5; README und NSIS-Installer verwenden die
+  versionierten Namen beziehungsweise die Windows-Versionsressource 0.1.5.0.
+- Beim Verbinden mit einem vorhandenen Synchronisationsschlüssel lädt Leaf
+  zunächst den Cloud-Stand und überträgt anschließend den zusammengeführten
+  lokalen Stand. Die Synchronisierung wird nur nach erfolgreichem Upload als
+  aktiv markiert; bei einem Uploadfehler bleibt sie deaktiviert und der Fehler
+  wird angezeigt. Dadurch wird der erste lokale Lesestand nach dem Verbinden
+  nicht mehr nur einem nachgelagerten Speichereffekt überlassen.
+- Tatsächlich ausgeführt und bestanden: `cargo test` (10 Tests),
+  `cargo fmt --check` und `git diff --check`.
+- Nicht erneut ausgeführt: Clippy sowie Web-, Android-, Linux-Release- und
+  Windows-Builds. Es wurden keine neuen Artefakte erstellt und kein
+  Laufzeittest, insbesondere nicht unter Windows, durchgeführt.
