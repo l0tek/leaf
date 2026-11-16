@@ -2,6 +2,10 @@
 set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_dir"
+if [ "${LEAF_VERSION_BUMPED:-0}" != 1 ]; then
+    "$project_dir/packaging/bump-version.sh"
+    LEAF_VERSION_BUMPED=1 "$project_dir/packaging/build-windows.sh"
+fi
 for tool in curl openssl osslsigncode makensis python3; do
     command -v "$tool" >/dev/null || { printf 'Build-Werkzeug fehlt: %s\n' "$tool" >&2; exit 1; }
 done

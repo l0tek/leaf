@@ -2,9 +2,17 @@
 set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_dir"
-# Requires cargo-xwin, clang-cl, lld-link and the Rust Windows MSVC target.
+[ "${LEAF_VERSION_BUMPED:-0}" = 1 ] || "$project_dir/packaging/bump-version.sh"
+# Requires cargo-xwin, clang (or clang-cl), lld-link and the Rust Windows MSVC target.
 XWIN_ARCH=x86_64 RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
 export XWIN_ARCH RUSTFLAGS
+# Das Android-NDK bringt clang, aber kein separates clang-cl mit. Der
+# clang-Backend von cargo-xwin funktioniert damit ohne eine fragile lokale
+# Symlink-Installation und verwendet weiterhin den MSVC-Sysroot.
+if ! command -v clang-cl >/dev/null 2>&1 && command -v clang >/dev/null 2>&1; then
+    XWIN_CROSS_COMPILER=clang
+    export XWIN_CROSS_COMPILER
+fi
 if [ -z "${LLVM_RC:-}" ] && [ -n "${ANDROID_NDK_HOME:-}" ] \
     && [ -x "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-rc" ]; then
     LLVM_RC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-rc"

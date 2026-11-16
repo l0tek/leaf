@@ -73,6 +73,7 @@ window.leafEpubOpen = async function (config) {
   let measuringPages = false;
   let paginationTimer = null;
   let lastLocation = null;
+  let opening = true;
 
   const pageMetric = location => {
     const section = location.start.index || 0;
@@ -91,7 +92,11 @@ window.leafEpubOpen = async function (config) {
   };
   const report = location => {
     lastLocation = location;
-    if (!measuringPages) dioxus.send(pageMetric(location));
+    // Beim ersten Öffnen folgt auf die erste Position noch die globale
+    // Paginierung. Erst nach deren Rückkehr zur gespeicherten CFI darf die
+    // Oberfläche sichtbar werden, sonst springt der Inhalt kurz durch alle
+    // Spine-Abschnitte.
+    if (!measuringPages && !opening) dioxus.send(pageMetric(location));
   };
   rendition.on("relocated", report);
   rendition.on("displayError", error => dioxus.send({ error: String(error?.message || error) }));
@@ -126,6 +131,9 @@ window.leafEpubOpen = async function (config) {
     const sections = book.spine.spineItems || [];
     if (!sections.length) return;
     measuringPages = true;
+    const viewer = document.getElementById("epub-viewer");
+    const hideViewer = opening && viewer;
+    if (hideViewer) viewer.style.visibility = "hidden";
     try {
       const counts = [];
       for (const section of sections) {
@@ -134,10 +142,14 @@ window.leafEpubOpen = async function (config) {
       }
       pageCounts = Array.from({ length: sections.length }, (_, index) => counts[index] || 1);
       await displayAt(restore || config.cfi || sections[0].href);
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
     } catch (error) {
       dioxus.send({ error: `Gesamtseitenzahl konnte nicht ermittelt werden: ${error?.message || error}` });
     } finally {
       measuringPages = false;
+      opening = false;
+      if (hideViewer) viewer.style.visibility = "visible";
     }
     // relocated kann bei WebView2 erst nach display() eintreffen. Die im
     // Handler zwischengespeicherte Position ist deshalb verlässlicher als

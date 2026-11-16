@@ -703,3 +703,31 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
 - Nicht erneut ausgeführt: Clippy sowie Web-, Android-, Linux-Release- und
   Windows-Builds. Es wurden keine neuen Artefakte erstellt und kein
   Laufzeittest, insbesondere nicht unter Windows, durchgeführt.
+
+## EPUB-Start ohne sichtbare Paginierung und Release-Artefakte 0.1.7 am 16. November 2026
+
+- Beim ersten Öffnen eines EPUB blieb die Ladeabdeckung bisher nach der ersten
+  `relocated`-Meldung nicht mehr sichtbar, obwohl die anschließende globale
+  Seitenermittlung noch alle Spine-Abschnitte nacheinander öffnete. Das führte
+  zu sichtbarem Flackern beziehungsweise Springen. `assets/epub-reader.js`
+  unterdrückt die erste Positionsmeldung nun bis nach der Rückkehr zur
+  gespeicherten CFI und verbirgt den EPUB-Viewer während dieser Messung. Erst
+  nach zwei Layout-Frames wird die Ansicht eingeblendet und der Lesestand an
+  Dioxus gemeldet.
+- Verbindliche Versionsautomatik ergänzt: `packaging/bump-version.sh`
+  aktualisiert Cargo, Lockdatei, NSIS und README. Die Einzel-Builds für Linux,
+  Windows, Installer, Android und Debian erhöhen vor dem Bauen; `build-all.sh`
+  erhöht genau einmal und erstellt Linux, Windows samt Setup und Android unter
+  derselben Version. Die Regel ist auch in `AGENTS.md` festgehalten.
+- `build-all.sh` erhöhte 0.1.6 auf 0.1.7 und erzeugte
+  `target/release/leaf`, `dist/windows-x64/Leaf.exe`,
+  `dist/Leaf-windows-x64.zip`, `dist/Leaf-Setup-0.1.7-x64.exe` sowie
+  `dist/Leaf-0.1.7-android-arm64.apk` (`versionCode` 1007).
+- Bestanden: Shell-Syntaxprüfung der Buildskripte, `cargo fmt --check`,
+  `cargo test --locked` (10 Tests), Clippy mit `-D warnings`,
+  `git diff --check`, Prüfsummen von Setup und APK, Windows-ZIP-Test,
+  Dateitypprüfung sowie Android-Paketmetadaten. Der Android-Build meldete nur
+  bekannte Gradle-Hinweise zur verwendeten Compile-SDK-/Plugin-Kombination.
+- Nicht durchgeführt: interaktiver Laufzeittest des EPUB-Starts, Android- oder
+  Windows-Laufzeittest sowie Windows-Installationstest. Der Windows-Cross-Build
+  und die gültige Installer-Prüfsumme ersetzen keinen solchen Test.

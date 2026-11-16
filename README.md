@@ -6,7 +6,7 @@ Ein eigenständiger EPUB-Reader in Rust und Dioxus 0.7. Die Desktop-App öffnet 
 
 ## Entwicklungsstand
 
-Version 0.1.5: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
+Version 0.1.7: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
 Windows-Installer, Android-APK (ARM64) und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
 Der vollständige technische Stand und die nächsten offenen Prüfungen stehen in
 [PROJEKTSTAND.md](PROJEKTSTAND.md). Hinweise für spätere Arbeitssitzungen:
@@ -36,6 +36,20 @@ Ausführbare Release-App bauen und direkt starten:
 ```sh
 cargo build --release
 ./target/release/leaf
+```
+
+Für eine auslieferbare Linux-App mit automatisch erhöhter Patch-Version:
+
+```sh
+./packaging/build-linux.sh
+```
+
+Jeder Plattform-Build erhöht die Patch-Version vor dem Bauen automatisch.
+`build-all.sh` erhöht sie einmal und erstellt Linux, Windows samt Setup und
+Android unter derselben Version:
+
+```sh
+./packaging/build-all.sh
 ```
 
 Das CSS und das Beispielbuch sind in der ausführbaren Datei enthalten. Die Datei kann auf kompatible Linux-Systeme mit den benötigten Systembibliotheken kopiert werden; Rust und Dioxus CLI werden dort nicht zum Starten benötigt.
@@ -77,7 +91,7 @@ env -u GTK_PATH -u GIO_MODULE_DIR ./target/release/leaf
 
 ## Windows-Installer
 
-`dist/Leaf-Setup-0.1.5-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
+`dist/Leaf-Setup-0.1.7-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
 `%LOCALAPPDATA%\Programs\Leaf`, erstellt Startmenü-Einträge und registriert die
 Deinstallation in den Windows-Einstellungen.
 
@@ -91,7 +105,7 @@ WebView2-Loader sind bereits in Leaf eingebunden.
 Deinstallation entfernt Leaf einschließlich der lokalen Bücher, Lesestände und
 Einstellungen; die gemeinsam genutzte WebView2 Runtime bleibt erhalten. Vor
 Updates oder Deinstallation Leaf schließen.
-Unbeaufsichtigte Installation: `Leaf-Setup-0.1.5-x64.exe /S`.
+Unbeaufsichtigte Installation: `Leaf-Setup-0.1.7-x64.exe /S`.
 
 Installer unter Linux erneut bauen:
 
@@ -99,6 +113,10 @@ Installer unter Linux erneut bauen:
 # Build-Abhängigkeiten: nsis, curl, openssl, osslsigncode, python3
 ./packaging/build-installer.sh
 ```
+
+Wird das Setup einzeln gebaut, erhöht das Skript die Version und erstellt die
+passende Windows-EXE selbst. Bei `build-all.sh` wird die gemeinsame Version
+nicht ein zweites Mal erhöht.
 
 Das Skript benötigt die zuvor gebaute `dist/windows-x64/Leaf.exe`, lädt den aktuellen
 Bootstrapper über Microsoft HTTPS und prüft dessen primäre Authenticode-Signatur
@@ -124,6 +142,8 @@ cargo install cargo-xwin --locked
 ./packaging/build-windows.sh
 ```
 
+Ein einzelner Windows-Build erhöht die Patch-Version automatisch.
+
 Das Skript bindet die C-Laufzeit statisch ein und erstellt EXE, ZIP und SHA-256-Prüfsumme.
 Für das eingebettete Windows-Icon wird zusätzlich `llvm-rc` benötigt; bei gesetztem
 `ANDROID_NDK_HOME` verwendet das Skript automatisch dessen LLVM-Ressourcencompiler.
@@ -131,7 +151,7 @@ Für das eingebettete Windows-Icon wird zusätzlich `llvm-rc` benötigt; bei ges
 
 ## Android-APK (ARM64)
 
-Die lokale Datei `dist/Leaf-0.1.5-android-arm64.apk` ist für Android ab Version 7
+Die lokale Datei `dist/Leaf-0.1.7-android-arm64.apk` ist für Android ab Version 7
 (API 24) auf ARM64-Geräten vorgesehen. Zum Installieren auf das Gerät kopieren
 und öffnen oder `adb install -r dist/Leaf-android-arm64.apk` verwenden.
 
@@ -146,10 +166,12 @@ rustup target add aarch64-linux-android
 ./packaging/build-android.sh
 ```
 
+Ein einzelner Android-Build erhöht die Patch-Version automatisch.
+
 Die APK enthält optimierten Rust-Code, ist aber mit dem lokalen Android-Debugschlüssel
 signiert und als Testpaket gedacht. Für eine Veröffentlichung ist ein dauerhafter
 Release-Schlüssel erforderlich. Die Prüfsumme steht in
-`dist/Leaf-0.1.5-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
+`dist/Leaf-0.1.7-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
 EPUB-Import über die Android-Dateiauswahl und Wiederherstellung der Lesestelle
 nach vollständigem App-Neustart geprüft. Android speichert `reading.json` im privaten Dateienverzeichnis der
 App; eine Deinstallation entfernt diese Daten.

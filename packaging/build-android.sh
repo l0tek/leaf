@@ -2,6 +2,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+[ "${LEAF_VERSION_BUMPED:-0}" = 1 ] || "$(pwd)/packaging/bump-version.sh"
+
 : "${JAVA_HOME:?JAVA_HOME muss auf ein JDK 17 oder neuer zeigen}"
 : "${ANDROID_HOME:?ANDROID_HOME muss auf das Android-SDK zeigen}"
 : "${ANDROID_NDK_HOME:?ANDROID_NDK_HOME muss auf das installierte Android-NDK zeigen}"
