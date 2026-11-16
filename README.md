@@ -6,7 +6,7 @@ Ein eigenständiger EPUB-Reader in Rust und Dioxus 0.7. Die Desktop-App öffnet 
 
 ## Entwicklungsstand
 
-Version 0.1.7: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
+Version 0.1.9: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
 Windows-Installer, Android-APK (ARM64) und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
 Der vollständige technische Stand und die nächsten offenen Prüfungen stehen in
 [PROJEKTSTAND.md](PROJEKTSTAND.md). Hinweise für spätere Arbeitssitzungen:
@@ -91,7 +91,7 @@ env -u GTK_PATH -u GIO_MODULE_DIR ./target/release/leaf
 
 ## Windows-Installer
 
-`dist/Leaf-Setup-0.1.7-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
+`dist/Leaf-Setup-0.1.9-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
 `%LOCALAPPDATA%\Programs\Leaf`, erstellt Startmenü-Einträge und registriert die
 Deinstallation in den Windows-Einstellungen.
 
@@ -105,7 +105,7 @@ WebView2-Loader sind bereits in Leaf eingebunden.
 Deinstallation entfernt Leaf einschließlich der lokalen Bücher, Lesestände und
 Einstellungen; die gemeinsam genutzte WebView2 Runtime bleibt erhalten. Vor
 Updates oder Deinstallation Leaf schließen.
-Unbeaufsichtigte Installation: `Leaf-Setup-0.1.7-x64.exe /S`.
+Unbeaufsichtigte Installation: `Leaf-Setup-0.1.9-x64.exe /S`.
 
 Installer unter Linux erneut bauen:
 
@@ -151,7 +151,7 @@ Für das eingebettete Windows-Icon wird zusätzlich `llvm-rc` benötigt; bei ges
 
 ## Android-APK (ARM64)
 
-Die lokale Datei `dist/Leaf-0.1.7-android-arm64.apk` ist für Android ab Version 7
+Die lokale Datei `dist/Leaf-0.1.9-android-arm64.apk` ist für Android ab Version 7
 (API 24) auf ARM64-Geräten vorgesehen. Zum Installieren auf das Gerät kopieren
 und öffnen oder `adb install -r dist/Leaf-android-arm64.apk` verwenden.
 
@@ -171,7 +171,7 @@ Ein einzelner Android-Build erhöht die Patch-Version automatisch.
 Die APK enthält optimierten Rust-Code, ist aber mit dem lokalen Android-Debugschlüssel
 signiert und als Testpaket gedacht. Für eine Veröffentlichung ist ein dauerhafter
 Release-Schlüssel erforderlich. Die Prüfsumme steht in
-`dist/Leaf-0.1.7-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
+`dist/Leaf-0.1.9-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
 EPUB-Import über die Android-Dateiauswahl und Wiederherstellung der Lesestelle
 nach vollständigem App-Neustart geprüft. Android speichert `reading.json` im privaten Dateienverzeichnis der
 App; eine Deinstallation entfernt diese Daten.
@@ -186,14 +186,14 @@ Buch-Icon in jeweils passenden Bildgrößen.
 - DRM-freie EPUB-Dateien lokal importieren (bis 30 MB)
 - Inhaltsverzeichnis aus EPUB-NAV/NCX (mit Spine-Fallback bei älteren Beständen)
 - Paginierte Anzeige über das lokal eingebettete epub.js, einschließlich Buchbildern,
-  Buchstyles, internen Links, Seiten- und Kapitelnavigation
+  Buchstyles, internen Links, Seiten- und Kapitelnavigation sowie Seitensprung
 - Schriftwahl (Serif, Sans oder Mono), letzte EPUB-CFI-Position, Kapitel, aktuelle
   Seite und Einstellungen automatisch
   lokal speichern
 - Responsive Leseansicht und deutsches Beispielbuch
 - Bereinigung importierter HTML-Inhalte; keine externen Buchressourcen
 
-Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. epub.js paginiert importierte Bücher in einer isolierten Buchansicht; Seitentasten, interne Links und Inhaltsverzeichnis verwenden die EPUB-eigenen Ziele. Die aktuelle Stelle wird als EPUB-CFI gespeichert und beim erneuten Öffnen wiederhergestellt. Das eingebaute Beispielbuch und ältere gespeicherte Importe ohne Originalarchiv verwenden weiterhin die bisherige Textansicht.
+Die Desktop-App speichert `reading.json` im lokalen Anwendungsdatenverzeichnis (Linux: `${XDG_DATA_HOME:-~/.local/share}/leaf/reading.json`). Schreiben erfolgt über eine temporäre Datei mit anschließendem Ersetzen. Bei einem Speicherfehler erscheint ein Hinweis in der Seitenleiste. Es werden keine Bücher hochgeladen. epub.js paginiert importierte Bücher in einer isolierten Buchansicht; Seitentasten, internen Links, Inhaltsverzeichnis und das Feld **Gehe zu** verwenden die EPUB-eigenen Ziele. Die aktuelle Stelle wird als EPUB-CFI gespeichert und beim erneuten Öffnen wiederhergestellt. Das eingebaute Beispielbuch und ältere gespeicherte Importe ohne Originalarchiv verwenden weiterhin die bisherige Textansicht.
 
 ### Online-Lesezeichen
 

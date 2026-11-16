@@ -360,6 +360,22 @@ fn turn_page(delta: i32) {
     });
 }
 
+fn go_to_text_page(page: usize) {
+    spawn(async move {
+        let _ = document::eval(&format!(
+            "const reader = document.querySelector('.reading-scroll'); if (reader) reader.scrollTo({{ left: 0, top: {} * Math.max(1, reader.clientHeight), behavior: 'instant' }});",
+            page
+        ))
+        .await;
+    });
+}
+
+fn epub_go_to_page(page: usize) {
+    spawn(async move {
+        let _ = document::eval(&format!("window.leafEpub?.goToPage({page});")).await;
+    });
+}
+
 fn install_page_gestures() {
     spawn(async move {
         let _ = document::eval(
@@ -828,6 +844,7 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
     let mut epub_at_start = use_signal(|| true);
     let mut epub_at_end = use_signal(|| false);
     let mut epub_error = use_signal(String::new);
+    let mut page_target = use_signal(String::new);
     use_effect(move || {
         let local = reading.read().clone();
         let remote = library.read().books[index].clone();
@@ -1057,6 +1074,32 @@ fn Reader(mut library: Signal<Library>, index: usize, saved: Signal<bool>) -> El
                 div { class: "page-controls", aria_label: "Seitennavigation",
                     button { disabled: if state.book.epub.is_some() { epub_at_start() } else { state.page == 0 }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("prev") } else { turn_page(-1) }, "← Seite" }
                     span { "Seite {state.page + 1} / {pages}" }
+                    div { class: "page-jump",
+                        label { r#for: "page-target", "Gehe zu" }
+                        input {
+                            id: "page-target",
+                            r#type: "number",
+                            min: "1",
+                            max: "{pages}",
+                            inputmode: "numeric",
+                            aria_label: "Zielseite",
+                            placeholder: "{state.page + 1}",
+                            value: "{page_target()}",
+                            oninput: move |event| page_target.set(event.value()),
+                        }
+                        button { aria_label: "Zur eingegebenen Seite springen", onclick: move |_| {
+                            let target = page_target().trim().parse::<usize>().unwrap_or(0);
+                            if target == 0 { return; }
+                            let target = target.min(pages) - 1;
+                            page_target.set(String::new());
+                            if reading.peek().book.epub.is_some() {
+                                reader_ready.set(false);
+                                epub_go_to_page(target);
+                            } else {
+                                go_to_text_page(target);
+                            }
+                        }, "Los" }
+                    }
                     button { disabled: if state.book.epub.is_some() { epub_at_end() } else { state.page + 1 >= pages }, onclick: move |_| if reading.peek().book.epub.is_some() { epub_action("next") } else { turn_page(1) }, "Seite →" }
                 }
                 div { class: "progress-track", div { style: "width: {progress}%" } }

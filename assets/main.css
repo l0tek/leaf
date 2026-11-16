@@ -413,6 +413,23 @@ h1 {
   padding:8px 12px;
   background:transparent;
   color:var(--accent)}
+.page-jump {
+  display:flex;
+  align-items:center;
+  gap:5px;
+  color:var(--muted)}
+.page-jump input {
+  width:52px;
+  border:1px solid var(--line);
+  border-radius:5px;
+  padding:7px 5px;
+  background:var(--paper);
+  color:var(--ink);
+  font:inherit;
+  text-align:center}
+.page-controls .page-jump button {
+  min-width:auto;
+  padding:7px 9px}
 footer {
   max-width:648px;
   margin:0 auto;
@@ -500,6 +517,8 @@ h1 {
   .page-controls button {
     min-width:82px;
     padding:8px}
+  .page-jump label {display:none}
+  .page-jump input {width:42px}
 .prose {
   line-height:1.8}
 }

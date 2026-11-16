@@ -731,3 +731,36 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
 - Nicht durchgeführt: interaktiver Laufzeittest des EPUB-Starts, Android- oder
   Windows-Laufzeittest sowie Windows-Installationstest. Der Windows-Cross-Build
   und die gültige Installer-Prüfsumme ersetzen keinen solchen Test.
+
+## Seitensprung 0.1.8 am 16. November 2026
+
+- Die Seitennavigation enthält jetzt das Eingabefeld **Gehe zu**. Für die
+  Textansicht springt Leaf direkt auf die entsprechende Viewport-Seite. Bei
+  EPUBs wird aus der vorhandenen Gesamtpaginierung zunächst der Spine-Abschnitt
+  bestimmt und dann bis zur angeforderten Bildschirmseite navigiert. Während
+  dieses EPUB-Sprungs bleibt die Ladeabdeckung sichtbar, damit Zwischenpositionen
+  nicht zu sehen sind. Ungültige Eingaben werden nicht ausgeführt, zu große
+  Seitenzahlen werden auf die letzte Seite begrenzt.
+- Die Patch-Version wurde gemäß der Buildregel von 0.1.7 auf 0.1.8 erhöht. Es
+  wurden keine neuen Release-Artefakte erstellt.
+- Bestanden: JavaScript-Syntaxprüfung mit GJS, `cargo fmt --check`,
+  `cargo test --locked` (10 Tests), `cargo clippy --all-targets -- -D warnings`
+  und `git diff --check`.
+- Noch offen: interaktiver Test mit kurzen und langen EPUBs, insbesondere
+  Seitensprünge in weit entfernte Abschnitte auf Android und Windows.
+
+## Testbare Artefakte für den Seitensprung 0.1.9 am 16. November 2026
+
+- Auf ausdrücklichen Nutzerwunsch ist `AGENTS.md` ergänzt: Nach jeder
+  funktionalen Änderung wird vor der Übergabe `packaging/build-all.sh`
+  ausgeführt, damit alle drei Zielplattformen testbar sind.
+- Der gemeinsame Build erhöhte die Version einmal von 0.1.8 auf 0.1.9 und
+  erzeugte `target/release/leaf`, `dist/windows-x64/Leaf.exe`,
+  `dist/Leaf-windows-x64.zip`, `dist/Leaf-Setup-0.1.9-x64.exe` und
+  `dist/Leaf-0.1.9-android-arm64.apk` (`versionCode` 1009).
+- Bestanden: Prüfsummen von Installer und APK, Windows-ZIP-Test,
+  Dateitypprüfung und Android-Paketmetadaten. Der Android-Build meldete nur
+  die bekannten Gradle-Hinweise zur Compile-SDK-/Plugin-Kombination.
+- Nicht durchgeführt: Laufzeittest des Seitensprungs oder der Installation auf
+  Windows und Android. Cross-Build und Archivprüfungen ersetzen keinen
+  Laufzeittest.

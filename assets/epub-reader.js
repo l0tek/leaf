@@ -74,6 +74,7 @@ window.leafEpubOpen = async function (config) {
   let paginationTimer = null;
   let lastLocation = null;
   let opening = true;
+  let jumping = false;
 
   const pageMetric = location => {
     const section = location.start.index || 0;
@@ -96,7 +97,7 @@ window.leafEpubOpen = async function (config) {
     // Paginierung. Erst nach deren Rückkehr zur gespeicherten CFI darf die
     // Oberfläche sichtbar werden, sonst springt der Inhalt kurz durch alle
     // Spine-Abschnitte.
-    if (!measuringPages && !opening) dioxus.send(pageMetric(location));
+    if (!measuringPages && !opening && !jumping) dioxus.send(pageMetric(location));
   };
   rendition.on("relocated", report);
   rendition.on("displayError", error => dioxus.send({ error: String(error?.message || error) }));
@@ -161,6 +162,43 @@ window.leafEpubOpen = async function (config) {
     clearTimeout(paginationTimer);
     paginationTimer = setTimeout(() => { measurePages(); }, 100);
   };
+  const turnTo = operation => new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (location, error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      rendition.off("relocated", located);
+      if (error) reject(error);
+      else resolve(location);
+    };
+    const located = location => finish(location);
+    const timeout = setTimeout(() => finish(rendition.currentLocation()), 5000);
+    rendition.on("relocated", located);
+    Promise.resolve(operation()).catch(error => finish(null, error));
+  });
+  const goToPage = async page => {
+    const sections = book.spine.spineItems || [];
+    if (!sections.length) return;
+    const total = Math.max(1, pageCounts.reduce((sum, count) => sum + count, 0));
+    let remaining = Math.min(Math.max(0, Number(page) || 0), total - 1);
+    let section = 0;
+    while (section + 1 < sections.length && remaining >= (pageCounts[section] || 1)) {
+      remaining -= pageCounts[section] || 1;
+      section += 1;
+    }
+    jumping = true;
+    try {
+      await displayAt(sections[section].href);
+      for (let index = 0; index < remaining; index += 1) await turnTo(() => rendition.next());
+    } catch (error) {
+      dioxus.send({ error: `Seite konnte nicht geöffnet werden: ${error?.message || error}` });
+    } finally {
+      jumping = false;
+      const location = rendition.currentLocation() || lastLocation;
+      if (location) dioxus.send(pageMetric(location));
+    }
+  };
 
   window.leafEpub = {
     book,
@@ -168,6 +206,7 @@ window.leafEpubOpen = async function (config) {
     next: () => rendition.next(),
     prev: () => rendition.prev(),
     display: target => rendition.display(target),
+    goToPage,
     appearance: (size, dark, font) => {
       rendition.themes.fontSize(`${size}px`);
       rendition.themes.font(font || "Georgia, 'Times New Roman', serif");

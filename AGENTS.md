@@ -13,3 +13,6 @@
   `packaging/bump-version.sh` zu verwenden. `packaging/build-all.sh` erhöht
   einmal und erzeugt daraus alle drei Plattform-Ausgaben mit derselben Version.
   Diese Buildprozess-Regel darf nicht entfernt oder umgangen werden.
+- Nach jeder funktionalen Änderung ist vor der Übergabe `packaging/build-all.sh`
+  auszuführen, damit Linux-App, Windows-Installer und Android-APK zum aktuellen
+  Stand testbar vorliegen.
