@@ -135,6 +135,18 @@ impl Library {
             });
         self.active = Some(index);
     }
+
+    fn remove_imported(&mut self, index: usize) -> bool {
+        let Some(reading) = self.books.get(index) else {
+            return false;
+        };
+        if reading.book.epub.is_none() {
+            return false;
+        }
+        self.books.remove(index);
+        self.active = None;
+        true
+    }
 }
 
 const SYNC_ENDPOINT: &str = "https://mnemonic.guru/leaf/";
@@ -617,6 +629,20 @@ mod storage_tests {
         assert_eq!(library.books.len(), 2);
         assert_eq!(library.active, Some(1));
         assert_eq!(library.books[1].chapter, 1);
+    }
+
+    #[test]
+    fn removes_only_imported_books() {
+        let mut library = Library::default();
+        let mut imported = book::demo();
+        imported.title = "Importiertes Buch".into();
+        imported.epub = Some("ZXB1Yg==".into());
+        library.import(imported);
+
+        assert!(!library.remove_imported(0));
+        assert!(library.remove_imported(1));
+        assert_eq!(library.books.len(), 1);
+        assert_eq!(library.books[0].book.title, "Ein neuer Anfang");
     }
     #[test]
     fn invalid_active_index_returns_to_library() {
@@ -1161,6 +1187,7 @@ fn ImportBook(onimport: EventHandler<book::Book>) -> Element {
 fn App() -> Element {
     let mut library = use_signal(restore);
     let mut saved = use_signal(|| true);
+    let mut delete_candidate = use_signal(|| None::<usize>);
     use_effect(move || saved.set(save(&library.read())));
     let sync_revision = use_memo(move || {
         let state = library.read();
@@ -1203,7 +1230,8 @@ fn App() -> Element {
                     }
                     div { class: "library-list", aria_label: "Bücherübersicht",
                         for (index, entry) in library.read().books.iter().enumerate() {
-                            button { class: "library-book", onclick: move |_| library.write().active = Some(index),
+                            div { class: "library-book",
+                                button { class: "open-book", onclick: move |_| library.write().active = Some(index),
                                 div { class: "library-cover", style: "--cover-tone: {index * 47 % 360}deg",
                                     span { class: "cover-monogram", "{cover_letter(&entry.book.title)}" }
                                     span { class: "cover-title", "{entry.book.title}" }
@@ -1215,6 +1243,32 @@ fn App() -> Element {
                                     span { "Kapitel {entry.chapter + 1} von {entry.book.chapters.len()}" }
                                 }
                                 span { class: "resume-book", "Buch öffnen →" }
+                                }
+                                if entry.book.epub.is_some() {
+                                    button {
+                                        class: "delete-book",
+                                        aria_label: "{entry.book.title} löschen",
+                                        onclick: move |_| delete_candidate.set(Some(index)),
+                                        "Löschen"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Some(index) = delete_candidate() {
+                        if let Some(entry) = library.read().books.get(index) {
+                            div { class: "delete-dialog-backdrop", role: "presentation",
+                                div { class: "delete-dialog", role: "alertdialog", aria_modal: "true", aria_label: "Buch löschen",
+                                    h2 { "Buch löschen?" }
+                                    p { "„{entry.book.title}“ wird samt lokalem Lesestand von diesem Gerät entfernt." }
+                                    div { class: "delete-dialog-actions",
+                                        button { class: "cancel-delete", onclick: move |_| delete_candidate.set(None), "Abbrechen" }
+                                        button { class: "confirm-delete", autofocus: true, onclick: move |_| {
+                                            library.write().remove_imported(index);
+                                            delete_candidate.set(None);
+                                        }, "Endgültig löschen" }
+                                    }
+                                }
                             }
                         }
                     }

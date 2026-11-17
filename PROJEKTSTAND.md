@@ -1,6 +1,6 @@
 # Projektstand — Leaf
 
-Stand: 28. Oktober 2026 · Arbeitsstand Version 0.1.5 (noch nicht committet)
+Stand: 17. November 2026 · Arbeitsstand Version 0.1.9 (noch nicht committet)
 Repository: https://github.com/l0tek/leaf
 
 Diese Datei ist der Einstieg für die nächste Arbeitssitzung. Sie dokumentiert den
@@ -20,6 +20,10 @@ aktualisieren. Die Versions- und Synchronisationsänderungen für 0.1.5 waren zu
 Beginn bereits uncommittet; kein Commit oder Push ist beauftragt.
 
 ## Implementiert
+
+- Importierte EPUBs können in der Bibliothek nach ausdrücklicher Bestätigung
+  gelöscht werden. Dabei werden das lokale Originalarchiv und der lokale
+  Lesestand entfernt; das eingebaute Beispielbuch bleibt geschützt.
 
 - EPUB-Import: ZIP-Container, OPF-Metadaten und Spine-Reihenfolge; neue Importe
   behalten zusätzlich das Originalarchiv für epub.js.
@@ -764,3 +768,42 @@ Lokale Werkzeugdetails dieser Sitzung (keine portable Voraussetzung):
 - Nicht durchgeführt: Laufzeittest des Seitensprungs oder der Installation auf
   Windows und Android. Cross-Build und Archivprüfungen ersetzen keinen
   Laufzeittest.
+
+## Löschfunktion für importierte EPUBs 0.1.10 am 17. November 2026
+
+- Die Bibliotheksansicht zeigt bei jedem importierten EPUB einen Knopf
+  **Löschen**. Vor dem Entfernen erscheint ein Bestätigungsdialog mit Titel;
+  nach Bestätigung entfernt Leaf das Buch mitsamt Originalarchiv und lokalem
+  Lesestand. Das integrierte Beispielbuch ist nicht löschbar.
+- Der gemeinsame Auslieferungsbuild erhöhte die Patch-Version einmal von 0.1.9
+  auf 0.1.10. Linux (`target/release/leaf`) und Windows-x64
+  (`dist/windows-x64/Leaf.exe`, `dist/Leaf-windows-x64.zip`) wurden erfolgreich
+  erstellt. Der Windows-Cross-Linker meldete ausschließlich die bekannten
+  LNK4099-Hinweise zu nicht vorhandenen Microsoft-PDB-Dateien.
+- Bestanden: `cargo fmt --check`, `cargo test` (11 Tests, einschließlich
+  Löschschutz des Beispielbuchs), `cargo clippy --all-targets -- -D warnings`
+  und `git diff --check`.
+- Der zunächst wegen fehlender Werkzeuge unterbrochene Gesamtbuild wurde ohne
+  zweite Versionsanhebung vervollständigt: `packaging/build-all.sh` hatte die
+  Version bereits regelkonform auf 0.1.10 erhöht. Danach wurden die ausstehenden
+  Stufen mit `LEAF_VERSION_BUMPED=1` gebaut. So entstanden auch
+  `dist/Leaf-Setup-0.1.10-x64.exe` und
+  `dist/Leaf-0.1.10-android-arm64.apk` (versionCode 1010).
+- Reproduzierbarer Werkzeugweg auf diesem Rechner: temporäres Verzeichnis
+  `/tmp/leaf-build-tools` anlegen; mit `apt-get download nsis nsis-common
+  osslsigncode` und `dpkg-deb -x … root` die Installer-Werkzeuge ohne
+  Systeminstallation bereitstellen; dann mit
+  `PATH=/tmp/leaf-build-tools/root/usr/bin:$PATH` und
+  `NSISDIR=/tmp/leaf-build-tools/root/usr/share/nsis` bauen. Für Android wurde
+  Temurin JDK 17 über
+  `https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jdk/hotspot/normal/eclipse`
+  nach `/tmp/leaf-build-tools/jdk-17.0.21+9` entpackt und der Build mit
+  `JAVA_HOME` auf diesen Pfad, `ANDROID_HOME=/home/l0tek/Android/Sdk` sowie
+  `ANDROID_NDK_HOME=/home/l0tek/Android/Sdk/ndk/27.2.12479018` ausgeführt.
+  Die temporären Werkzeuge gehören nicht zum Repository.
+- Bestanden nach dem Nachbau: Prüfsummen von Setup, APK und Windows-EXE,
+  Windows-ZIP-Test, APK-ZIP-Test und Android-Paketmetadaten (Paket
+  `de.leaf.reader`, minSdk 24, targetSdk 34). Der Android-Build meldet nur
+  Gradle-Hinweise zur Compile-SDK-/Plugin-Kompatibilität und veralteten
+  Build-Optionen. Kein interaktiver Desktop-, Windows- oder Android-Laufzeittest
+  durchgeführt.

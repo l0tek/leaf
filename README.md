@@ -6,7 +6,7 @@ Ein eigenständiger EPUB-Reader in Rust und Dioxus 0.7. Die Desktop-App öffnet 
 
 ## Entwicklungsstand
 
-Version 0.1.9: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
+Version 0.1.10: Text-EPUB-Reader mit Linux-Desktop-App, Windows-x64-EXE,
 Windows-Installer, Android-APK (ARM64) und optionaler Web-Version. Ein Windows-Laufzeittest steht noch aus.
 Der vollständige technische Stand und die nächsten offenen Prüfungen stehen in
 [PROJEKTSTAND.md](PROJEKTSTAND.md). Hinweise für spätere Arbeitssitzungen:
@@ -91,7 +91,7 @@ env -u GTK_PATH -u GIO_MODULE_DIR ./target/release/leaf
 
 ## Windows-Installer
 
-`dist/Leaf-Setup-0.1.9-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
+`dist/Leaf-Setup-0.1.10-x64.exe` installiert Leaf für das aktuelle Benutzerkonto nach
 `%LOCALAPPDATA%\Programs\Leaf`, erstellt Startmenü-Einträge und registriert die
 Deinstallation in den Windows-Einstellungen.
 
@@ -105,7 +105,7 @@ WebView2-Loader sind bereits in Leaf eingebunden.
 Deinstallation entfernt Leaf einschließlich der lokalen Bücher, Lesestände und
 Einstellungen; die gemeinsam genutzte WebView2 Runtime bleibt erhalten. Vor
 Updates oder Deinstallation Leaf schließen.
-Unbeaufsichtigte Installation: `Leaf-Setup-0.1.9-x64.exe /S`.
+Unbeaufsichtigte Installation: `Leaf-Setup-0.1.10-x64.exe /S`.
 
 Installer unter Linux erneut bauen:
 
@@ -151,7 +151,7 @@ Für das eingebettete Windows-Icon wird zusätzlich `llvm-rc` benötigt; bei ges
 
 ## Android-APK (ARM64)
 
-Die lokale Datei `dist/Leaf-0.1.9-android-arm64.apk` ist für Android ab Version 7
+Die lokale Datei `dist/Leaf-0.1.10-android-arm64.apk` ist für Android ab Version 7
 (API 24) auf ARM64-Geräten vorgesehen. Zum Installieren auf das Gerät kopieren
 und öffnen oder `adb install -r dist/Leaf-android-arm64.apk` verwenden.
 
@@ -171,7 +171,7 @@ Ein einzelner Android-Build erhöht die Patch-Version automatisch.
 Die APK enthält optimierten Rust-Code, ist aber mit dem lokalen Android-Debugschlüssel
 signiert und als Testpaket gedacht. Für eine Veröffentlichung ist ein dauerhafter
 Release-Schlüssel erforderlich. Die Prüfsumme steht in
-`dist/Leaf-0.1.9-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
+`dist/Leaf-0.1.10-android-arm64.apk.sha256`. Auf einem Samsung Galaxy Tab A7 Lite (SM-T220, Android 14) wurden Installation,
 EPUB-Import über die Android-Dateiauswahl und Wiederherstellung der Lesestelle
 nach vollständigem App-Neustart geprüft. Android speichert `reading.json` im privaten Dateienverzeichnis der
 App; eine Deinstallation entfernt diese Daten.
